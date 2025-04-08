@@ -6,6 +6,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { HomeScreen } from '../screens/home-screen';
 import { TranscriptionScreen } from '../screens/transcription-screen';
 import { TranscriptionTestScreen } from '../screens/TranscriptionTestScreen';
+import { LibraryScreen } from '../screens/library-screen';
+import { SermonDetailScreen } from '../screens/sermon-detail-screen';
 import { useTheme } from '../contexts/theme-context';
 
 // Define navigation param types
@@ -13,6 +15,7 @@ export type RootStackParamList = {
   Main: undefined;
   Transcription: undefined;
   TranscriptionTest: undefined;
+  SermonDetail: { sermonId: string };
 };
 
 export type MainTabParamList = {
@@ -24,7 +27,8 @@ export type MainTabParamList = {
 const Stack = createStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-// Placeholder screens
+// Remove this entire placeholder function
+/* 
 function LibraryScreen() {
   const { colors } = useTheme();
   return (
@@ -33,7 +37,9 @@ function LibraryScreen() {
     </View>
   );
 }
+*/
 
+// Keep placeholder Settings screen 
 function SettingsScreen() {
   const { colors } = useTheme();
   return (
@@ -98,7 +104,7 @@ export function AppNavigator() {
         }}
       >
         <Stack.Screen name="Main" component={MainTabs} />
-        <Stack.Screen name="Transcription" component={TranscriptionScreen} />
+        <Stack.Screen name="Transcription" component={TranscriptionScreen} options={{ headerShown: true, title: 'Record & Transcribe' }} />
         <Stack.Screen 
           name="TranscriptionTest" 
           component={TranscriptionTestScreen}
@@ -106,6 +112,14 @@ export function AppNavigator() {
             headerShown: true,
             title: 'Transcription Test',
           }}
+        />
+        <Stack.Screen 
+          name="SermonDetail" 
+          component={SermonDetailScreen} 
+          options={{ 
+            headerShown: true,
+            title: 'Sermon Details',
+          }} 
         />
       </Stack.Navigator>
     </NavigationContainer>
