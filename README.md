@@ -52,3 +52,40 @@ npx expo start
 - React Navigation
 - Firebase (authentication, Firestore, storage)
 - Google Cloud Speech-to-Text API 
+
+## Styling
+
+This project uses a theme-aware React Native styling approach:
+
+- **Theme Context**: Provides theme data and dark/light mode switching
+- **useTheme Hook**: Access colors and theme state in components
+- **useThemeStyles Hook**: Create theme-aware StyleSheet objects
+
+### Example Usage
+
+```tsx
+import { useThemeStyles } from './src/hooks/useThemeStyles';
+
+function MyComponent() {
+  const { createThemedStyles } = useThemeStyles();
+  
+  const styles = createThemedStyles((colors) => ({
+    container: {
+      backgroundColor: colors.background.primary,
+      padding: 16,
+    },
+    text: {
+      color: colors.text.primary,
+      fontSize: 16,
+    }
+  }));
+  
+  return (
+    <View style={styles.container}>
+      <Text style={styles.text}>Themed text</Text>
+    </View>
+  );
+}
+```
+
+See `src/docs/styling-guide.md` for detailed styling documentation. 

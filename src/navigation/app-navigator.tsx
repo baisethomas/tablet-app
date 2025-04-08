@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { NavigationContainer, ParamListBase } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { HomeScreen } from '../screens/home-screen';
@@ -20,33 +20,42 @@ export type RootStackParamList = {
 
 export type MainTabParamList = {
   Home: undefined;
-  Library: undefined;
-  Settings: undefined;
+  Record: undefined;
+  Account: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-// Remove this entire placeholder function
-/* 
-function LibraryScreen() {
+// Placeholder Account screen
+function AccountScreen() {
   const { colors } = useTheme();
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background.primary }}>
-      <Text style={{ color: colors.text.primary }}>Library Screen - Coming Soon</Text>
+      <Text style={{ color: colors.text.primary }}>Account Screen - Coming Soon</Text>
     </View>
   );
 }
-*/
 
-// Keep placeholder Settings screen 
-function SettingsScreen() {
-  const { colors } = useTheme();
+// Custom middle button component for Record
+interface RecordButtonProps {
+  onPress: () => void;
+}
+
+function RecordButton({ onPress }: RecordButtonProps) {
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background.primary }}>
-      <Text style={{ color: colors.text.primary }}>Settings Screen - Coming Soon</Text>
-    </View>
+    <TouchableOpacity
+      style={styles.recordButton}
+      onPress={onPress}
+    >
+      <View style={styles.recordButtonInner} />
+    </TouchableOpacity>
   );
+}
+
+// Empty component for the Record tab
+function EmptyComponent() {
+  return null;
 }
 
 function MainTabs() {
@@ -60,35 +69,52 @@ function MainTabs() {
         tabBarStyle: {
           backgroundColor: colors.background.primary,
           borderTopColor: colors.ui.border,
+          height: 65,
+          paddingBottom: 10,
         },
         headerStyle: {
           backgroundColor: colors.background.primary,
         },
         headerTintColor: colors.text.primary,
+        headerShown: false,
       }}
     >
       <Tab.Screen 
         name="Home" 
         component={HomeScreen} 
         options={{
-          title: 'Home',
-          // We would add icons here in a real implementation
+          tabBarIcon: ({ color }: { color: string }) => (
+            <Text style={{ color, fontSize: 20, paddingBottom: 3 }}>🏠</Text>
+          ),
+          tabBarLabel: 'Home',
         }}
       />
       <Tab.Screen 
-        name="Library" 
-        component={LibraryScreen} 
-        options={{
-          title: 'My Sermons',
-          // We would add icons here in a real implementation
-        }}
+        name="Record" 
+        component={EmptyComponent}
+        options={({ navigation }) => ({
+          tabBarButton: () => (
+            <RecordButton 
+              onPress={() => navigation.navigate('Transcription')} 
+            />
+          ),
+          tabBarLabel: () => null,
+        })}
+        listeners={({ navigation }) => ({
+          tabPress: (e: { preventDefault: () => void }) => {
+            e.preventDefault();
+            navigation.navigate('Transcription');
+          },
+        })}
       />
       <Tab.Screen 
-        name="Settings" 
-        component={SettingsScreen} 
+        name="Account" 
+        component={AccountScreen} 
         options={{
-          title: 'Settings',
-          // We would add icons here in a real implementation
+          tabBarIcon: ({ color }: { color: string }) => (
+            <Text style={{ color, fontSize: 20, paddingBottom: 3 }}>👤</Text>
+          ),
+          tabBarLabel: 'Account',
         }}
       />
     </Tab.Navigator>
@@ -104,7 +130,14 @@ export function AppNavigator() {
         }}
       >
         <Stack.Screen name="Main" component={MainTabs} />
-        <Stack.Screen name="Transcription" component={TranscriptionScreen} options={{ headerShown: true, title: 'Record & Transcribe' }} />
+        <Stack.Screen 
+          name="Transcription" 
+          component={TranscriptionScreen} 
+          options={{ 
+            headerShown: true, 
+            title: 'Record & Transcribe' 
+          }} 
+        />
         <Stack.Screen 
           name="TranscriptionTest" 
           component={TranscriptionTestScreen}
@@ -124,4 +157,25 @@ export function AppNavigator() {
       </Stack.Navigator>
     </NavigationContainer>
   );
-} 
+}
+
+const styles = StyleSheet.create({
+  recordButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#0077FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+    alignSelf: 'center',
+    transform: [{ translateY: -15 }],
+  },
+  recordButtonInner: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'white',
+    alignSelf: 'center',
+  },
+}); 

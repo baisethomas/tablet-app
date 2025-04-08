@@ -1,8 +1,15 @@
 export const fontWeights = {
-  regular: 400,
-  medium: 500,
-  semiBold: 600,
-  bold: 700,
+  thin: '100',
+  extraLight: '200',
+  light: '300',
+  regular: '400',
+  medium: '500',
+  semiBold: '600',
+  bold: '700',
+  extraBold: '800',
+  black: '900',
+  // Aliases for matching React Native's named weights
+  normal: '400',
 };
 
 export const fontSizes = {
@@ -34,4 +41,7 @@ export const lineHeights = {
   displaySmall: 38,
   displayMedium: 44,
   displayLarge: 50,
-}; 
+};
+
+// Export a type for the font weight keys for better type safety
+export type FontWeightKeys = keyof typeof fontWeights; 
