@@ -95,7 +95,7 @@ A mobile application for taking sermon notes with real-time transcription capabi
    - Enhance display of the final transcript (e.g., use theme color instead of black).
    - Consider adding basic audio playback controls.
    - Implement persistence for saved transcripts (Basic AsyncStorage saving done).
-   - Implement Notes functionality.
+   - Implement Notes functionality (Done - Basic editing/saving in Detail screen).
 
 ## Known Issues
 1. Audio file upload size limitations (AssemblyAI limits apply).
@@ -104,16 +104,14 @@ A mobile application for taking sermon notes with real-time transcription capabi
 4. **iOS Audio Session Errors:** (Resolved).
 5. **Incorrect Audio Format:** (Resolved).
 6. **Transcription Delay:** User must wait for upload and batch processing after recording stops.
-7. **Transcript Display Color:** (Resolved) Text color needed adjustment for contrast against background.
+7. **Transcript Display Color:** (Resolved) Text color needed adjustment for contrast.
 
 ## Future Enhancements / Proposed Features
 
-### Notes Integration (Next Step)
+### Notes Integration (Completed - Basic)
 - **Goal:** Allow users to add and edit manual notes associated with saved transcripts.
-- **Approach:** 
-    1. Add a `notes: string` field to the `SavedSermon` data structure in `AsyncStorage`.
-    2. Add a `TextInput` to `SermonDetailScreen` to display/edit the notes.
-    3. Implement logic in `SermonDetailScreen` to update the corresponding sermon object in `AsyncStorage` when notes are changed.
+- **Implementation:** Added a `notes: string` field to `SavedSermon`. Added `TextInput` and save logic to `SermonDetailScreen` using `AsyncStorage`.
+- **Next Steps:** UI refinement, potentially auto-save or debouncing.
 
 ### Cloud Persistence & Sync (Future)
 - **Goal:** Backup transcripts/notes and sync across devices.
@@ -147,12 +145,13 @@ A mobile application for taking sermon notes with real-time transcription capabi
   - POST /v2/realtime/token: Obtain temporary token for WebSocket.
   - WSS wss://api.assemblyai.com/v2/realtime/ws: Real-time transcription WebSocket.
 - Authentication: API key in Authorization header.
-- **Transcription Implementation (Batch - Complete & Saving/Viewing Locally):**
+- **Transcription Implementation (Batch - Complete & Notes Implemented Locally):**
   - `AudioRecorder` component records full audio (`.wav`) and provides URI on stop.
   - `TranscriptionScreen` orchestrates batch processing (Upload -> Submit -> Poll -> Display).
   - Completed transcript is saved to `AsyncStorage` (key `"savedSermons"`).
   - `LibraryScreen` fetches and displays a list of saved sermons from `AsyncStorage`.
   - `SermonDetailScreen` fetches and displays the full transcript and details for a selected sermon ID from `AsyncStorage`.
+  - `SermonDetailScreen` allows viewing and editing notes associated with the transcript, saving changes back to `AsyncStorage`.
   - UI manages states for recording and batch processing.
   - Service functions handle AssemblyAI API interactions.
   - Temporary audio file is deleted.
