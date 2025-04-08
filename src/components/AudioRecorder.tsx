@@ -1,185 +1,65 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import Constants from 'expo-constants';
-// Import base-64 using require if standard import fails with bundler
-const base64 = require('base-64');
 
+// Interface defines the callback when recording stops
 interface AudioRecorderProps {
-  onTranscriptionUpdate?: (text: string, isFinal: boolean) => void;
+  onRecordingStop?: (fullAudioUri: string) => void;
 }
 
-// AssemblyAI Real-time Configuration
-const ASSEMBLYAI_WS_URL = 'wss://api.assemblyai.com/v2/realtime/ws';
-const SAMPLE_RATE = 16000; // Must match recording settings
-const RECORDING_INTERVAL_MS = 1000; // *** REDUCED INTERVAL *** How often to send chunks
+// Configuration (Sample rate is still relevant for recording quality)
+const SAMPLE_RATE = 16000;
 
-export function AudioRecorder({ onTranscriptionUpdate }: AudioRecorderProps) {
+export function AudioRecorder({ onRecordingStop }: AudioRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [finalizedTranscript, setFinalizedTranscript] = useState('');
-  const [currentPartialTranscript, setCurrentPartialTranscript] = useState('');
+  const [isPreparing, setIsPreparing] = useState(false); // State for preparation phase
 
-  const websocketRef = useRef<WebSocket | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
-  const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const apiKey = Constants.expoConfig?.extra?.ASSEMBLYAI_API_KEY;
-  const stopTriggeredByUser = useRef(false); // Ref to track if stop was intentional
-
-  // *** Ref to track the latest isListening state for the interval closure ***
-  const isListeningRef = useRef(isListening);
-  useEffect(() => {
-    isListeningRef.current = isListening;
-  }, [isListening]);
+  const fullAudioUriRef = useRef<string | null>(null);
 
   // --- Cleanup Logic ---
   useEffect(() => {
+    // Ensure recording is stopped and unloaded if component unmounts
     return () => {
-      // Cleanup function should be synchronous
-      stopRealtimeTranscription();
-      if (recordingTimeoutRef.current) {
-        clearTimeout(recordingTimeoutRef.current);
+      if (recordingRef.current) {
+        console.log("AudioRecorder unmounting, ensuring recording is stopped.");
+        recordingRef.current.stopAndUnloadAsync()
+          .catch(e => console.error("Error stopping recording on unmount:", e));
+        recordingRef.current = null;
       }
     };
   }, []);
 
-  // Helper function to convert ArrayBuffer to Base64
-  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  };
+  // --- Recording Logic ---
 
-  // --- WebSocket and Recording Logic ---
-
-  const startRealtimeTranscription = async () => {
+  const startRecording = async () => {
     try {
-      if (isListening) {
-        console.warn('[DEBUG] Already listening');
+      if (isRecording) {
+        console.warn('Already recording');
         return;
       }
+      setError(null);
+      setIsPreparing(true);
 
-      setIsRecording(true);
-      setIsConnecting(true);
-
-      // Reset transcripts on start
-      setFinalizedTranscript('');
-      setCurrentPartialTranscript('');
-
-      // First, set up the audio session
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch (error) {
-        console.error('[DEBUG] Error configuring audio session:', error);
-        throw new Error('Failed to configure audio session');
-      }
-
-      // Then request permissions
+      // Request permissions
       const { status } = await Audio.requestPermissionsAsync();
       if (status !== 'granted') {
         throw new Error('Audio recording permission not granted');
       }
 
-      console.log('[DEBUG] Audio permissions granted');
-
-      setIsListening(true);
-      setError(null);
-
-      const response = await fetch('https://api.assemblyai.com/v2/realtime/token', {
-        method: 'POST',
-        headers: {
-          'Authorization': apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ expires_in: 3600 }),
+      // Configure audio mode
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true, // Important for background capabilities?
+        staysActiveInBackground: false, // Background recording might require more setup
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to get token: ${response.statusText}`);
-      }
-
-      const { token } = await response.json();
-
-      const ws = new WebSocket(`${ASSEMBLYAI_WS_URL}?sample_rate=${SAMPLE_RATE}&token=${token}`);
-
-      ws.onopen = () => {
-        setIsConnecting(false);
-        startRecordingLoop();
-      };
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        if (data.message_type === 'SessionBegins') {
-        } else if (data.message_type === 'PartialTranscript') {
-          const newText = data.text || '';
-          setCurrentPartialTranscript(newText);
-          // Pass only the latest partial text to the parent
-          onTranscriptionUpdate?.(newText, false);
-        } else if (data.message_type === 'FinalTranscript') {
-          const newText = data.text || '';
-          // Append to finalized transcript
-          setFinalizedTranscript(prev => prev ? `${prev} ${newText}`.trim() : newText);
-          // Clear the current partial transcript
-          setCurrentPartialTranscript('');
-          // Pass the final text chunk to the parent
-          onTranscriptionUpdate?.(newText, true);
-        }
-      };
-
-      ws.onerror = (error) => {
-        console.error('[DEBUG] WebSocket error:', error);
-        setError('WebSocket connection error');
-        stopRealtimeTranscription();
-      };
-
-      ws.onclose = (event) => {
-        stopRealtimeTranscription();
-      };
-
-      websocketRef.current = ws;
-    } catch (error) {
-      console.error('[DEBUG] Error starting transcription:', error);
-      setError(error instanceof Error ? error.message : 'Failed to start transcription');
-      stopRealtimeTranscription();
-    }
-  };
-
-  const stopRealtimeTranscription = () => {
-    const ws = websocketRef.current;
-    if (ws) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-      websocketRef.current = null;
-    }
-    stopRecordingLoop();
-    setIsListening(false);
-    setIsRecording(false);
-    setIsConnecting(false);
-  };
-
-  const runRecordingCycle = async () => {
-    if (!isListeningRef.current || !websocketRef.current || websocketRef.current.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    try {
       const recording = new Audio.Recording();
-
-      // Explicitly configure recording for WAV format required by AssemblyAI
       await recording.prepareToRecordAsync({
         android: {
           extension: '.wav',
@@ -205,105 +85,78 @@ export function AudioRecorder({ onTranscriptionUpdate }: AudioRecorderProps) {
         }
       });
 
-      await recording.startAsync();
+      recordingRef.current = recording;
+      await recordingRef.current.startAsync();
 
-      await new Promise(resolve => setTimeout(resolve, RECORDING_INTERVAL_MS));
+      setIsPreparing(false);
+      setIsRecording(true);
+      console.log("Recording started");
 
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+    } catch (error: any) {
+      console.error('Error starting recording:', error);
+      setError(error.message || 'Failed to start recording');
+      setIsPreparing(false);
+      // Clean up potentially partially prepared recording
+      if (recordingRef.current) {
+        try { await recordingRef.current.stopAndUnloadAsync(); } catch (e) { /* ignore */ }
+        recordingRef.current = null;
+      }
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recordingRef.current) {
+      console.warn("Not recording, cannot stop.");
+      return;
+    }
+    console.log("Stopping recording...");
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null; // Clear the ref
+
       if (!uri) {
-        throw new Error('Failed to get recording URI');
+        throw new Error('Failed to get recording URI after stopping.');
       }
+      console.log("Recording stopped. URI:", uri);
+      fullAudioUriRef.current = uri; // Store for potential cleanup if needed
 
-      const { sound, status } = await Audio.Sound.createAsync(
-        { uri },
-        { shouldPlay: false }
-      );
+      // Call the callback with the final URI
+      onRecordingStop?.(uri);
 
-      if (status.isLoaded) {
-        const audioData = await sound.getStatusAsync();
-        
-        if (audioData.isLoaded) {
-          const response = await fetch(uri);
-          const audioBlob = await response.blob();
-          
-          const base64Audio = await FileSystem.readAsStringAsync(uri, {
-            encoding: FileSystem.EncodingType.Base64
-          });
-
-          if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-            websocketRef.current.send(JSON.stringify({ audio_data: base64Audio }));
-          }
-        }
-      }
-
-      await sound.unloadAsync();
-
-      // Cleanup the recording file
-      try {
-        await FileSystem.deleteAsync(uri);
-      } catch (deleteError) {
-        console.error('[DEBUG] Error deleting recording file:', deleteError);
-      }
-
-      if (isListeningRef.current) {
-        recordingTimeoutRef.current = setTimeout(runRecordingCycle, RECORDING_INTERVAL_MS);
-      }
-    } catch (error) {
-      console.error('[DEBUG] Error in recording cycle:', error);
-      if (error instanceof Error) {
-        setError(error.message);
-      }
-      stopRealtimeTranscription();
-    }
-  };
-
-  const startRecordingLoop = () => {
-    if (recordingTimeoutRef.current) {
-      clearTimeout(recordingTimeoutRef.current);
-    }
-    recordingTimeoutRef.current = setTimeout(runRecordingCycle, 100);
-  };
-
-  const stopRecordingLoop = () => {
-    if (recordingTimeoutRef.current) {
-      clearTimeout(recordingTimeoutRef.current);
-      recordingTimeoutRef.current = null;
+    } catch (error: any) {
+      console.error('Error stopping recording:', error);
+      setError(error.message || 'Failed to stop recording');
+      // Ensure ref is cleared even on error
+      recordingRef.current = null;
+    } finally {
+      // Always reset recording state, even if callback fails
+      setIsRecording(false);
+      setIsPreparing(false);
     }
   };
 
   // --- UI Rendering ---
-  function getStatusText() {
-    if (error) return `Error: ${error}`;
-    if (isConnecting) return 'Connecting...';
-    if (isListening) return 'Listening...';
-    if (isRecording) return 'Starting...';
-    return 'Ready to record';
+  function getButtonText() {
+    if (isPreparing) return 'Preparing...';
+    if (isRecording) return 'Stop Recording';
+    return 'Start Recording';
   }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.status}>{getStatusText()}</Text>
       {error && <Text style={styles.errorText}>{error}</Text>}
-      {(finalizedTranscript || currentPartialTranscript) ? (
-        <ScrollView style={styles.transcriptScrollView}>
-          <Text style={styles.transcriptionText}>
-            {finalizedTranscript}
-            {finalizedTranscript && currentPartialTranscript ? ' ' : ''}
-            <Text style={styles.partialText}>{currentPartialTranscript}</Text>
-          </Text>
-        </ScrollView>
-      ) : null}
-
       <TouchableOpacity
-        style={[styles.button, isRecording && styles.recordingButton]}
-        onPress={isRecording ? stopRealtimeTranscription : startRealtimeTranscription}
-        disabled={isConnecting}
+        style={[styles.button, (isRecording || isPreparing) && styles.recordingButton]}
+        onPress={isRecording ? stopRecording : startRecording}
+        disabled={isPreparing} // Disable button while preparing
       >
-        <Text style={styles.buttonText}>
-          {isConnecting ? 'Connecting...' : (isRecording ? 'Stop Recording' : 'Start Real-time')}
-        </Text>
+        {isPreparing 
+          ? <ActivityIndicator color="#FFFFFF" /> 
+          : <Text style={styles.buttonText}>{getButtonText()}</Text>
+        }
       </TouchableOpacity>
+      {isRecording && <Text style={styles.statusText}>Recording...</Text>} 
     </View>
   );
 }
@@ -311,23 +164,22 @@ export function AudioRecorder({ onTranscriptionUpdate }: AudioRecorderProps) {
 // --- Styles ---
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    // flex: 1, // Removed flex: 1 to allow parent control
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-  },
-  status: {
-    fontSize: 18,
-    marginBottom: 10,
-    textAlign: 'center',
+    paddingVertical: 10, // Keep some vertical padding
+    width: '100%', // Take full width
   },
   button: {
     backgroundColor: '#007AFF',
-    padding: 15,
+    paddingVertical: 15,
+    paddingHorizontal: 30, // Give more horizontal space
     borderRadius: 8,
     minWidth: 200,
+    minHeight: 50, // Ensure consistent height
     alignItems: 'center',
-    marginTop: 10,
+    justifyContent: 'center',
+    flexDirection: 'row', // For activity indicator
   },
   recordingButton: {
     backgroundColor: '#FF3B30',
@@ -342,22 +194,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textAlign: 'center',
   },
-  transcriptScrollView: {
-    marginTop: 15,
-    maxHeight: 150,
-    width: '100%',
-    borderColor: '#E0E0E0',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    backgroundColor: '#F8F8F8',
-  },
-  transcriptionText: {
-    fontSize: 15,
-    color: '#333',
-  },
-  partialText: {
-    color: '#888',
-    fontStyle: 'italic',
+  statusText: {
+    marginTop: 10,
+    color: '#555', // Use a neutral color
+    fontSize: 14,
   },
 }); 

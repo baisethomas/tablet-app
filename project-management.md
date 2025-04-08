@@ -82,24 +82,39 @@ A mobile application for taking sermon notes with real-time transcription capabi
 
 ## Technical Debt
 1. **Type Definitions**
-   - Add proper types for AssemblyAI responses (Partially addressed for RealtimeTranscript)
-   - Improve error type handling
-   - Document API interfaces
+   - Add proper types for AssemblyAI responses (Batch & Realtime).
+   - Improve error type handling.
+   - Document API interfaces.
 2. **Code Organization**
-   - Move API keys to environment variables (Done via `expo-constants`)
-   - Implement proper service layer (Partially done for pre-recorded in `src/services/assemblyai.ts`)
-   - Add comprehensive logging (Basic error logging remains after debug cleanup)
+   - Move API keys to environment variables (Done via `expo-constants`).
+   - Implement proper service layer (Refactored for batch workflow).
+   - Add comprehensive logging (Basic error logging remains).
 3. **Transcription UI Refinement:**
-   - Further enhance the real-time display for maximum fluidity.
-   - Consider visual cues for speaker pauses or utterance ends.
+   - Improve UI feedback during Uploading/Processing states.
+   - Enhance display of the final transcript (e.g., use theme color instead of black).
+   - Consider adding basic audio playback controls.
+   - Implement persistence for saved transcripts.
 
 ## Known Issues
-1. Audio file upload size limitations (For pre-recorded)
-2. Network dependency for transcription (Applies to both modes)
-3. Potential memory issues with large recordings (More relevant for pre-recorded or very long real-time sessions)
-4. **Real-time Transcription Coherence:** Due to the chunk-based audio capture required by `expo-av` (vs. true streaming), the real-time transcription might not be perfectly word-for-word smooth. The current display logic mitigates this visually, but minor delays or boundary artifacts inherent to chunking can occur.
-5. **iOS Audio Session Errors:** Resolved through careful configuration of `Audio.setAudioModeAsync` and `recording.prepareToRecordAsync` with explicit `.wav`/PCM settings. Initial implementation faced `NSOSStatusErrorDomain Code=1718449215`.
-6. **Incorrect Audio Format:** Resolved by forcing `.wav` format recording. Initial attempts using `HIGH_QUALITY` preset resulted in `.m4a` files and empty transcripts from AssemblyAI.
+1. Audio file upload size limitations (AssemblyAI limits apply).
+2. Network dependency for transcription (Upload, polling).
+3. Potential memory issues with very long recordings (Local storage during recording).
+4. **iOS Audio Session Errors:** (Resolved).
+5. **Incorrect Audio Format:** (Resolved).
+6. **Transcription Delay:** User must wait for upload and batch processing after recording stops.
+7. **Transcript Display Color:** (Resolved) Text color needed adjustment for contrast against background.
+
+## Future Enhancements / Proposed Features
+
+### Real-time Transcription (Deferred)
+- **Goal:** Provide live transcription feedback during recording.
+- **Approach:** Use AssemblyAI's WebSocket endpoint (`wss://.../realtime/ws`).
+- **Challenges:** Requires chunked audio capture (using `expo-av`), handling partial/final transcripts, managing WebSocket state, potential coherence issues due to chunking (as observed previously). See previous "Hybrid Transcription Approach" plan in commit history for detailed implementation considerations if revisited.
+
+### Hybrid Transcription Approach (Deferred)
+- **Goal:** Combine real-time feedback with optional high-accuracy post-processing.
+- **Approach:** Run real-time WebSocket transcription *while also* saving the full audio file. Offer a "Finalize" button post-recording to trigger batch processing on the full file for improved accuracy.
+- **Challenges:** Increased complexity (managing both processes), doubled API processing costs, temporary local storage for full audio. See previous detailed plan in commit history if revisited.
 
 ## Dependencies
 - expo-av: ^15.0.2
@@ -111,19 +126,23 @@ A mobile application for taking sermon notes with real-time transcription capabi
 ## API Integration
 ### AssemblyAI
 - Base URL: https://api.assemblyai.com/v2
-- Endpoints:
-  - POST /upload: Upload audio file (For pre-recorded)
-  - POST /transcript: Start transcription (For pre-recorded)
-  - GET /transcript/{id}: Get transcription status (For pre-recorded)
-  - POST /v2/realtime/token: Obtain temporary token for WebSocket
-  - WSS wss://api.assemblyai.com/v2/realtime/ws: Real-time transcription WebSocket
-- Authentication: API key in Authorization header (REST) or via token (WebSocket)
-- **Real-time Implementation (`src/components/AudioRecorder.tsx`):**
-  - Uses Expo AV (`expo-av`) to record audio chunks from the microphone.
-  - Connects to AssemblyAI WebSocket endpoint using a temporary token.
-  - Records audio in fixed intervals (`RECORDING_INTERVAL_MS`) to `.wav` files (16kHz, mono, 16-bit PCM).
-  - Reads each chunk file as Base64 using `expo-file-system`.
-  - Sends Base64 audio data via WebSocket message `{"audio_data": "..."}`.
-  - Handles `PartialTranscript` and `FinalTranscript` messages to display results.
-  - Implements specific display logic to differentiate between final and partial text for better coherence.
+- Endpoints Used (Batch Approach):
+  - POST /upload: Upload full audio file after recording stops.
+  - POST /transcript: Start batch transcription job using the uploaded audio URL.
+  - GET /transcript/{id}: Poll for transcription job status and retrieve results.
+- Endpoints (Deferred Real-time):
+  - POST /v2/realtime/token: Obtain temporary token for WebSocket.
+  - WSS wss://api.assemblyai.com/v2/realtime/ws: Real-time transcription WebSocket.
+- Authentication: API key in Authorization header.
+- **Transcription Implementation (Batch - Complete):**
+  - `AudioRecorder` component uses `expo-av` to record the full audio to a local `.wav` file (16kHz, mono, 16-bit PCM) and provides a callback with the file URI upon stopping.
+  - `TranscriptionScreen` orchestrates the batch processing workflow:
+    1. Receives the audio URI.
+    2. Uploads the file (`/upload`).
+    3. Submits a batch job (`/transcript`).
+    4. Polls for completion (`/transcript/{id}`).
+    5. Displays the final transcript.
+    6. Deletes the temporary local audio file.
+  - UI (`TranscriptionScreen`) manages states: Idle, Recording, Uploading, Processing, Complete, Error.
+  - Service functions (`src/services/assemblyai.ts`) provide modular upload, submit, and poll capabilities.
 - Rate Limits: Standard tier limits apply 

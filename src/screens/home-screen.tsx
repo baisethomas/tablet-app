@@ -6,6 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 type RootStackParamList = {
   Home: undefined;
+  Transcription: undefined;
   TranscriptionTest: undefined;
 };
 
@@ -26,9 +27,10 @@ export function HomeScreen() {
         <View style={styles.actionsContainer}>
           <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate('Transcription')}
           >
             <Text style={[styles.actionButtonText, { color: colors.background.primary }]}>
-              New Sermon
+              Start New Transcription
             </Text>
           </TouchableOpacity>
           
