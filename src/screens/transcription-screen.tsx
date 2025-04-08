@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, SafeAreaView, ScrollView, ActivityIndicator, Al
 import { useTheme } from '../contexts/theme-context';
 import { AudioRecorder } from '../components/AudioRecorder';
 import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Assume these functions exist and are imported from your service file
 import {
@@ -13,6 +14,14 @@ import {
 
 // Define UI states
 type UiState = 'Idle' | 'Recording' | 'Uploading' | 'Processing' | 'Complete' | 'Error';
+
+// Define the structure for saved data
+interface SavedSermon {
+  id: string; 
+  date: string; 
+  title?: string; 
+  transcript: string; 
+}
 
 export function TranscriptionScreen() {
   const { colors } = useTheme();
@@ -78,10 +87,15 @@ export function TranscriptionScreen() {
           // Log the entire result object upon completion
           console.log("Job Complete! Result object:", JSON.stringify(result, null, 2)); 
           
-          setFinalTranscript(result.text || '');
+          const completedTranscript = result.text || '';
+          setFinalTranscript(completedTranscript);
           setUiState('Complete');
           setJobId(null);
-          await cleanupFullAudioFile(null); // Use URI from state
+          
+          // Save the completed transcript right after completion
+          await saveTranscriptToStorage(completedTranscript);
+
+          await cleanupFullAudioFile(null);
         } else if (result.status === 'error') {
           if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
           setErrorMessage(result.error || 'Transcription job failed.');
@@ -129,6 +143,47 @@ export function TranscriptionScreen() {
       setUiState('Error');
       // Clean up the file immediately if the process fails early
       await cleanupFullAudioFile(audioUri); 
+    }
+  };
+
+  // Function to save the transcript using AsyncStorage
+  const saveTranscriptToStorage = async (transcriptToSave: string) => {
+    if (!transcriptToSave) return; // Don't save empty transcripts
+
+    try {
+      const sermonId = Date.now().toString();
+      const sermonDate = new Date().toISOString();
+      const newSermon: SavedSermon = {
+        id: sermonId,
+        date: sermonDate,
+        transcript: transcriptToSave,
+        title: `Sermon - ${new Date(sermonDate).toLocaleDateString()}` // Example title
+      };
+
+      const existingData = await AsyncStorage.getItem('savedSermons');
+      let sermonsArray: SavedSermon[] = [];
+      if (existingData !== null) {
+        try {
+          sermonsArray = JSON.parse(existingData);
+          if (!Array.isArray(sermonsArray)) {
+              console.warn('Saved sermons data is not an array, resetting.');
+              sermonsArray = [];
+          }
+        } catch (parseError) {
+          console.error('Error parsing saved sermons:', parseError);
+          sermonsArray = []; // Reset on parse error
+        }
+      }
+      
+      sermonsArray.unshift(newSermon); // Add new sermon to the beginning
+
+      await AsyncStorage.setItem('savedSermons', JSON.stringify(sermonsArray));
+      console.log('Sermon saved successfully to AsyncStorage!');
+      Alert.alert('Success', 'Transcription saved successfully.');
+
+    } catch (error) {
+      console.error('Failed to save transcription to AsyncStorage:', error);
+      Alert.alert('Error', 'Failed to save transcription locally.');
     }
   };
 

@@ -93,7 +93,7 @@ A mobile application for taking sermon notes with real-time transcription capabi
    - Improve UI feedback during Uploading/Processing states.
    - Enhance display of the final transcript (e.g., use theme color instead of black).
    - Consider adding basic audio playback controls.
-   - Implement persistence for saved transcripts.
+   - Implement persistence for saved transcripts (Basic AsyncStorage saving done).
 
 ## Known Issues
 1. Audio file upload size limitations (AssemblyAI limits apply).
@@ -134,15 +134,11 @@ A mobile application for taking sermon notes with real-time transcription capabi
   - POST /v2/realtime/token: Obtain temporary token for WebSocket.
   - WSS wss://api.assemblyai.com/v2/realtime/ws: Real-time transcription WebSocket.
 - Authentication: API key in Authorization header.
-- **Transcription Implementation (Batch - Complete):**
-  - `AudioRecorder` component uses `expo-av` to record the full audio to a local `.wav` file (16kHz, mono, 16-bit PCM) and provides a callback with the file URI upon stopping.
-  - `TranscriptionScreen` orchestrates the batch processing workflow:
-    1. Receives the audio URI.
-    2. Uploads the file (`/upload`).
-    3. Submits a batch job (`/transcript`).
-    4. Polls for completion (`/transcript/{id}`).
-    5. Displays the final transcript.
-    6. Deletes the temporary local audio file.
+- **Transcription Implementation (Batch - Complete & Saving Locally):**
+  - `AudioRecorder` component uses `expo-av` to record the full audio to a local `.wav` file and provides a callback with the file URI upon stopping.
+  - `TranscriptionScreen` orchestrates the batch processing workflow (Upload -> Submit -> Poll -> Display).
+  - Upon successful batch completion, the final transcript is saved locally to `@react-native-async-storage/async-storage` under the key `"savedSermons"` as an array of `SavedSermon` objects.
   - UI (`TranscriptionScreen`) manages states: Idle, Recording, Uploading, Processing, Complete, Error.
   - Service functions (`src/services/assemblyai.ts`) provide modular upload, submit, and poll capabilities.
+  - Temporary audio file is deleted after processing.
 - Rate Limits: Standard tier limits apply 
