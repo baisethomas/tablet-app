@@ -25,7 +25,10 @@ interface AudioPlayerControls {
   skipBackward: () => void;
 }
 
-export function useAudioPlayer(audioUrl: string | null | undefined): AudioPlayerControls {
+export function useAudioPlayer(
+  audioUrl: string | null | undefined,
+  skipAmountMs: number = 15000 // Add optional parameter with default
+): AudioPlayerControls {
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [status, setStatus] = useState<AVPlaybackStatus | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -38,7 +41,7 @@ export function useAudioPlayer(audioUrl: string | null | undefined): AudioPlayer
   const formattedDuration = formatTime(durationMillis);
   const formattedPosition = formatTime(positionMillis);
 
-  const skipAmount = 15000; // 15 seconds
+  // const skipAmount = 15000; // Remove hardcoded value
 
   // --- Playback Status Updates ---
   const onPlaybackStatusUpdate = useCallback((newStatus: AVPlaybackStatus) => {
@@ -136,15 +139,15 @@ export function useAudioPlayer(audioUrl: string | null | undefined): AudioPlayer
 
   const skipForward = useCallback(async () => {
     if (!sound || !status?.isLoaded) return;
-    const newPosition = Math.min(durationMillis, positionMillis + skipAmount);
+    const newPosition = Math.min(durationMillis, positionMillis + skipAmountMs);
     await sound.setPositionAsync(newPosition);
-  }, [sound, status, durationMillis, positionMillis]);
+  }, [sound, status, durationMillis, positionMillis, skipAmountMs]);
 
   const skipBackward = useCallback(async () => {
     if (!sound || !status?.isLoaded) return;
-    const newPosition = Math.max(0, positionMillis - skipAmount);
+    const newPosition = Math.max(0, positionMillis - skipAmountMs);
     await sound.setPositionAsync(newPosition);
-  }, [sound, status, positionMillis]);
+  }, [sound, status, positionMillis, skipAmountMs]);
 
   // --- Return Controls and State ---
   return {

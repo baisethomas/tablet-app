@@ -4,6 +4,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SavedSermon } from '../types/sermon';
 import { uploadAudioFile, submitBatchJob, pollBatchJobStatus } from '../services/assemblyai';
 import { generateSermonSummary, StructuredSummary } from '../services/openai';
+import { 
+    addSermon, 
+    updateSermon, 
+    getSermonById // Import relevant storage functions
+} from '../services/sermon-storage'; 
 
 // --- State Definition ---
 interface RecordingState {
@@ -128,27 +133,36 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
   const recordingRef = useRef<Audio.Recording | null>(null);
 
   // --- Recording Status Update Handler ---
-  const onRecordingStatusUpdate = useCallback((status: any) => {
-    if (status.isRecording) {
-      dispatch({ type: 'UPDATE_DURATION', payload: status.durationMillis });
-    } 
-
-    // Check for explicit errors first
-    if (status.error) { // expo-av might populate this on critical failure
-        console.error("Recording Status Error (Explicit):", status.error);
-        dispatch({ type: 'RECORDING_ERROR', payload: status.error });
-        recordingRef.current?.stopAndUnloadAsync().catch(e => console.error("Cleanup error:", e));
-        recordingRef.current = null;
-        return; // Don't proceed if there's an explicit error
+  const onRecordingStatusUpdate = useCallback((status: any) => { 
+    // Only proceed if status looks like a valid recording status object
+    if (status && typeof status.isRecording === 'boolean' && typeof status.durationMillis === 'number') {
+      if (status.isRecording) {
+        dispatch({ type: 'UPDATE_DURATION', payload: status.durationMillis });
+      }
+      
+      // Check if recording stopped unexpectedly while we thought it was active
+      // Use optional chaining for isDoneRecording as it might not always be present
+      if (status.isDoneRecording === true && state.isRecording) {
+          const errorMsg = "Recording stopped unexpectedly.";
+          console.error("Recording Status Error:", errorMsg, status);
+          dispatch({ type: 'RECORDING_ERROR', payload: errorMsg });
+          recordingRef.current?.stopAndUnloadAsync().catch(e => console.error("Cleanup error:", e));
+          recordingRef.current = null;
+      }
+      
+      // Check if recording capability is lost
+      if (status.canRecord === false) {
+          const errorMsg = "Recording cannot continue (permissions issue or resource conflict?)";
+          console.error("Recording Status Error:", errorMsg, status);
+          dispatch({ type: 'RECORDING_ERROR', payload: errorMsg });
+          recordingRef.current?.stopAndUnloadAsync().catch(e => console.error("Cleanup error:", e));
+          recordingRef.current = null;
+      }
+    } else {
+      // Log if the status object is not what we expect
+      console.warn("Received unexpected/invalid recording status object:", status);
     }
-
-    // Log unexpected states but don't necessarily stop recording immediately
-    if (!status.isDoneRecording && !status.canRecord) {
-        console.warn("Recording Status Warning: canRecord is false but no explicit error.", status);
-        // We might choose *not* to dispatch RECORDING_ERROR here unless it persists
-        // For now, just log it.
-    }
-  }, []);
+  }, [state.isRecording]); 
 
   // --- Async Action Functions ---
   const startRecording = useCallback(async (): Promise<string | null> => {
@@ -169,7 +183,8 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
       console.log('[RecordingContext] Audio mode set.');
 
       const newRecording = new Audio.Recording();
-      newRecording.setOnRecordingStatusUpdate(onRecordingStatusUpdate);
+      // Pass the callback, accepting the type mismatch for now
+      newRecording.setOnRecordingStatusUpdate(onRecordingStatusUpdate as any);
       await newRecording.prepareToRecordAsync({
           android: {
               extension: '.m4a',
@@ -196,22 +211,20 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
           }
       });
       
-      // Create placeholder sermon immediately
+      // Create placeholder sermon object
       const sermonId = `rec_${Date.now()}`;
       const sermonDate = new Date().toISOString();
       const placeholderSermon: SavedSermon = {
         id: sermonId,
         date: sermonDate,
         title: `Recording - ${new Date(sermonDate).toLocaleTimeString()}`,
-        transcript: '', // Initially empty
-        // audioUrl will be added later
+        transcript: '', 
+        processingStatus: 'processing', // Start in processing state
       };
 
-      const existingData = await AsyncStorage.getItem('savedSermons') || '[]';
-      const sermonsArray: SavedSermon[] = JSON.parse(existingData); // Add try/catch later?
-      sermonsArray.unshift(placeholderSermon);
-      await AsyncStorage.setItem('savedSermons', JSON.stringify(sermonsArray));
-      console.log(`[RecordingContext] Placeholder sermon created: ${sermonId}`);
+      // Use the storage service to add the sermon
+      await addSermon(placeholderSermon);
+      console.log(`[RecordingContext] Placeholder sermon added via service: ${sermonId}`);
 
       await newRecording.startAsync();
       console.log('[RecordingContext] Recording started.');
@@ -302,9 +315,9 @@ async function processRecordingInBackground(
 ) {
   let finalError: string | null = null;
   try {
-    // Immediately mark as processing in storage
+    // Mark as processing using the service
     console.log(`[BackgroundProcess] Marking sermon ${sermonId} as processing...`);
-    await updateSermonStatus(sermonId, { processingStatus: 'processing' });
+    await updateSermon(sermonId, { processingStatus: 'processing' }); // ID first
 
     // 1. Upload
     console.log(`[BackgroundProcess] Uploading: ${audioUri}`);
@@ -332,28 +345,32 @@ async function processRecordingInBackground(
     const summary = await generateSermonSummary(transcript);
     console.log(`[BackgroundProcess] Summary generated.`);
 
-    // 5. Update Sermon in AsyncStorage with results
+    // 5. Update Sermon using the service
     console.log(`[BackgroundProcess] Updating sermon record: ${sermonId} with results...`);
-    await updateSermonStatus(sermonId, { 
-      transcript: transcript, 
-      audioUrl: audioUri, 
-      summary: summary || undefined,
-      processingStatus: 'completed', 
-      processingError: undefined, // Clear any previous error
-      // Potentially update title here too?
-      // title: summary ? generateTitleFromSummary(summary) : undefined,
-    });
-    console.log(`[BackgroundProcess] Sermon record updated successfully.`);
+    await updateSermon(
+      sermonId, // ID first
+      {
+        transcript: transcript,
+        audioUrl: audioUri, 
+        summary: summary || undefined,
+        processingStatus: 'completed',
+        processingError: undefined, 
+      }
+    ); 
+    console.log(`[BackgroundProcess] Sermon record updated successfully via service.`);
 
   } catch (error: any) {
     console.error('[BackgroundProcess] Error:', error);
     finalError = error.message || 'Background processing failed.';
-    // Update storage with error status
+    // Update storage with error status using the service
     try {
-      await updateSermonStatus(sermonId, { 
-        processingStatus: 'error', 
-        processingError: finalError 
-      });
+      await updateSermon(
+        sermonId, // ID first
+        { 
+          processingStatus: 'error', 
+          processingError: finalError ?? undefined // Also apply nullish coalescing here
+        } 
+      );
     } catch (updateError) {
       console.error(`[BackgroundProcess] CRITICAL: Failed to update sermon ${sermonId} with error status:`, updateError);
     }
@@ -367,33 +384,6 @@ async function processRecordingInBackground(
       type: 'FINISH_PROCESSING', 
       payload: dispatchPayload
     });
-  }
-}
-
-// Helper function to update specific fields of a sermon in AsyncStorage
-async function updateSermonStatus(
-  sermonId: string, 
-  updates: Partial<SavedSermon> // Use Partial to allow updating specific fields
-): Promise<void> {
-  try {
-    const existingData = await AsyncStorage.getItem('savedSermons') || '[]';
-    const sermonsArray: SavedSermon[] = JSON.parse(existingData);
-    const sermonIndex = sermonsArray.findIndex(s => s.id === sermonId);
-
-    if (sermonIndex === -1) {
-      throw new Error(`Cannot find sermon with ID ${sermonId} to update status.`);
-    }
-
-    // Merge updates with existing sermon data
-    sermonsArray[sermonIndex] = { 
-      ...sermonsArray[sermonIndex], 
-      ...updates // Apply the updates
-    };
-
-    await AsyncStorage.setItem('savedSermons', JSON.stringify(sermonsArray));
-  } catch (error) {
-    console.error(`[updateSermonStatus] Error updating sermon ${sermonId}:`, error);
-    throw error; // Re-throw to be caught by the caller if needed
   }
 }
 

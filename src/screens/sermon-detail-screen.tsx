@@ -20,6 +20,7 @@ import { SummaryTab } from '../components/sermon-detail/SummaryTab';
 import { TranscriptTab } from '../components/sermon-detail/TranscriptTab';
 import { NotesTab } from '../components/sermon-detail/NotesTab';
 import { ErrorDisplay } from '../components/ui/ErrorDisplay';
+import { getSermonById } from '../services/sermon-storage'; // Import storage service
 
 // Define the route prop type, including optional initialTab
 type SermonDetailScreenRouteProp = RouteProp<RootStackParamList & { SermonDetail: { initialTab?: keyof SermonDetailTabParamList } }, 'SermonDetail'>;
@@ -51,58 +52,40 @@ export function SermonDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load sermon data
+  // Load sermon data using the service
   useEffect(() => {
     const loadSermonDetail = async () => {
+      if (!sermonId) {
+        setError('No sermon ID provided');
+        setIsLoading(false);
+        return;
+      }
+      
       setIsLoading(true);
       setError(null);
       setSermon(null);
       
       try {
-        console.log("Loading sermon with ID:", sermonId);
-        const existingData = await AsyncStorage.getItem('savedSermons');
-        if (existingData === null) {
-          throw new Error('No saved sermons found.');
-        }
-
-        console.log("Got saved sermons data:", existingData.substring(0, 100) + "...");
-        
-        let sermonsArray: SavedSermon[] = [];
-        try {
-          sermonsArray = JSON.parse(existingData);
-          if (!Array.isArray(sermonsArray)) {
-            console.warn('Saved sermons data is not an array.');
-            throw new Error('Saved data format error.');
-          }
-        } catch (parseError) {
-          console.error('Error parsing saved sermons:', parseError);
-          throw new Error('Failed to read saved data. It might be corrupted.');
-        }
-
-        console.log("Found sermons array with length:", sermonsArray.length);
-        const foundSermon = sermonsArray.find(s => s.id === sermonId);
+        console.log(`[SermonDetail] Loading sermon with ID: ${sermonId}`);
+        // Use the storage service function
+        const foundSermon = await getSermonById(sermonId);
 
         if (!foundSermon) {
-          console.error(`Sermon with ID ${sermonId} not found.`);
-          throw new Error(`Sermon with ID ${sermonId} not found.`);
+          console.error(`[SermonDetail] Sermon with ID ${sermonId} not found.`);
+          throw new Error(`Recording details could not be found.`); // User-friendly message
         }
 
-        console.log("Found sermon:", foundSermon);
+        console.log("[SermonDetail] Found sermon:", foundSermon.id);
         setSermon(foundSermon);
       } catch (e: any) {
-        console.error('Failed to fetch sermon detail:', e);
-        setError(e.message || 'Failed to load sermon details.');
+        console.error('[SermonDetail] Failed to fetch sermon detail:', e);
+        setError(e.message || 'Failed to load recording details.');
       } finally {
         setIsLoading(false);
       }
     };
 
-    if (sermonId) {
-      loadSermonDetail();
-    } else {
-      setError('No sermon ID provided');
-      setIsLoading(false);
-    }
+    loadSermonDetail();
   }, [sermonId]);
 
   // Use the correct prop name for NotesTab

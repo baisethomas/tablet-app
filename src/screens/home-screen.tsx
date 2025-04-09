@@ -21,6 +21,7 @@ import type { RootStackParamList } from '../navigation/app-navigator';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { createSampleSermonData, clearSermonData } from '../utils/dev-helpers';
 import { ErrorDisplay } from '../components/ui/ErrorDisplay';
+import { getAllSermons } from '../services/sermon-storage';
 
 // Define the structure for saved data
 interface SavedSermon {
@@ -286,32 +287,15 @@ export function HomeScreen() {
     },
   });
 
-  const loadSermons = useCallback(async () => {
+  const loadSermonsFromStorage = useCallback(async () => {
+    setIsLoading(true);
     setError(null);
     try {
-      const existingData = await AsyncStorage.getItem('savedSermons');
-      let sermonsArray: SavedSermon[] = [];
-      if (existingData !== null) {
-        try {
-          sermonsArray = JSON.parse(existingData);
-          if (!Array.isArray(sermonsArray)) {
-            console.warn('Saved sermons data is not an array, resetting.');
-            sermonsArray = [];
-            // Optionally set a specific error for format issue
-            // setError('Saved data has an incorrect format.'); 
-          }
-        } catch (parseError) {
-          console.error('Error parsing saved sermons:', parseError);
-          // Set specific message for parsing error
-          setError('Failed to read saved data. It might be corrupted.'); 
-          sermonsArray = [];
-        }
-      }
+      const sermonsArray = await getAllSermons();
       setSermons(sermonsArray);
-    } catch (e) {
-      console.error('Failed to fetch sermons from storage:', e);
-      // Keep generic message for other storage errors
-      setError('Failed to load sermons.'); 
+    } catch (e: any) {
+      console.error('[HomeScreen] Failed to fetch sermons:', e);
+      setError('Failed to load saved recordings. Please try again.');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -321,15 +305,14 @@ export function HomeScreen() {
   // Load sermons when the screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      setIsLoading(true);
-      loadSermons();
-    }, [loadSermons])
+      loadSermonsFromStorage();
+    }, [loadSermonsFromStorage])
   );
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
-    loadSermons();
-  }, [loadSermons]);
+    loadSermonsFromStorage();
+  }, [loadSermonsFromStorage]);
 
   const handlePressItem = (sermonId: string) => {
     navigation.navigate('SermonDetail', { sermonId });
@@ -434,7 +417,7 @@ export function HomeScreen() {
       return (
         <ErrorDisplay 
           message={error} 
-          onRetry={loadSermons} 
+          onRetry={loadSermonsFromStorage} 
         />
       );
     }
