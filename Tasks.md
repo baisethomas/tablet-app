@@ -36,8 +36,9 @@ This document tracks completed and pending tasks for the project.
     *   ✅ Implement `stopRecordingAndProcess` (trigger background processing).
     *   ✅ Implement `RecordingStatusBar` UI.
     *   ✅ Refactor Home Screen record button.
+    *   ✅ Implement background processing status feedback (Storage + UI).
     *   ⏳ Pause/Resume reliability check.
-    *   ⏳ Background processing robustness (notifications?, error state in sermon record?).
+    *   ⏳ Background processing robustness (notifications?).
 *   ✅ **Error Handling:** Implement robust error handling.
     *   ✅ Consistent UI (`ErrorDisplay`).
     *   ✅ Specific API/Storage messages.

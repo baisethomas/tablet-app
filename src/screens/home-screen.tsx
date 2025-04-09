@@ -8,7 +8,8 @@ import {
   TouchableOpacity, 
   ActivityIndicator,
   RefreshControl,
-  StatusBar
+  StatusBar,
+  Alert
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -27,6 +28,8 @@ interface SavedSermon {
   date: string; 
   title?: string; 
   transcript: string; 
+  processingStatus?: string;
+  processingError?: string;
 }
 
 // Rename interface for SectionList structure
@@ -187,18 +190,18 @@ export function HomeScreen() {
     sermonCard: {
       backgroundColor: colors.background.secondary, 
       borderRadius: 8,
-      marginHorizontal: theme.spacing.md, // Keep horizontal margin
-      marginVertical: theme.spacing.sm, // Increase vertical margin
+      marginHorizontal: theme.spacing.md, 
+      marginVertical: theme.spacing.sm, 
       padding: theme.spacing.md,
-      // Remove shadow
-      // shadowColor: '#000',
-      // shadowOffset: { width: 0, height: 1 },
-      // shadowOpacity: 0.05,
-      // shadowRadius: 2,
-      // elevation: 1,
-      // Add subtle border instead
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.ui.border, 
+    },
+    processingCard: {
+      opacity: 0.6,
+    },
+    errorCard: {
+      borderColor: colors.ui.error,
+      borderWidth: 1,
     },
     cardHeader: {
       flexDirection: 'row',
@@ -225,6 +228,20 @@ export function HomeScreen() {
       lineHeight: theme.lineHeights.button, 
       marginTop: theme.spacing.xs, 
       marginLeft: theme.spacing.sm, // Add left margin for indent
+    },
+    cardStatusContainer: {
+        marginTop: theme.spacing.sm,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    cardStatusText: {
+        marginLeft: theme.spacing.xs,
+        fontSize: theme.fontSizes.caption,
+        color: colors.text.secondary,
+        fontStyle: 'italic',
+    },
+    cardErrorText: {
+        color: colors.ui.error,
     },
     centeredInfo: {
       flex: 1,
@@ -348,10 +365,31 @@ export function HomeScreen() {
     // Get preview text (first line, no bullet)
     const previewText = item.transcript?.split('\n')[0] || 'No transcript available';
     
+    const handleCardPress = () => {
+      if (item.processingStatus === 'error') {
+        Alert.alert(
+          'Processing Error',
+          item.processingError || 'An unknown error occurred during processing.',
+          [{ text: 'OK' }]
+        );
+      } else if (item.processingStatus !== 'processing') {
+        // Only navigate if not processing and no error
+        navigation.navigate('SermonDetail', { sermonId: item.id });
+      }
+      // Do nothing if processing
+    };
+
+    const cardStyle = [
+      styles.sermonCard,
+      item.processingStatus === 'processing' && styles.processingCard,
+      item.processingStatus === 'error' && styles.errorCard
+    ];
+
     return (
       <TouchableOpacity 
-        style={styles.sermonCard} 
-        onPress={() => handlePressItem(item.id)}
+        style={cardStyle} 
+        onPress={handleCardPress}
+        activeOpacity={item.processingStatus === 'processing' ? 1 : 0.7} // Prevent opacity change if processing
       >
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle} numberOfLines={1}>{item.title || 'Note'}</Text>
@@ -362,6 +400,23 @@ export function HomeScreen() {
         </View>
         {/* Render preview text directly */}
         <Text style={styles.cardPreview} numberOfLines={2}>{previewText}</Text>
+
+        {/* Add Status Indicator */}
+        {(item.processingStatus === 'processing' || item.processingStatus === 'error') && (
+          <View style={styles.cardStatusContainer}>
+            {item.processingStatus === 'processing' && (
+              <ActivityIndicator size="small" color={colors.text.secondary} />
+            )}
+            {item.processingStatus === 'error' && (
+              <Ionicons name="alert-circle-outline" size={16} color={colors.ui.error} />
+            )}
+            <Text 
+              style={[styles.cardStatusText, item.processingStatus === 'error' && styles.cardErrorText]}
+            >
+              {item.processingStatus === 'processing' ? 'Processing...' : 'Error'}
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };

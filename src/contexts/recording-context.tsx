@@ -298,10 +298,14 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
 async function processRecordingInBackground(
   audioUri: string, 
   sermonId: string,
-  dispatch: Dispatch<Action> // To dispatch completion/error
+  dispatch: Dispatch<Action> 
 ) {
-  let finalStatus: string | null = null;
+  let finalError: string | null = null;
   try {
+    // Immediately mark as processing in storage
+    console.log(`[BackgroundProcess] Marking sermon ${sermonId} as processing...`);
+    await updateSermonStatus(sermonId, { processingStatus: 'processing' });
+
     // 1. Upload
     console.log(`[BackgroundProcess] Uploading: ${audioUri}`);
     const uploadUrl = await uploadAudioFile(audioUri);
@@ -328,31 +332,68 @@ async function processRecordingInBackground(
     const summary = await generateSermonSummary(transcript);
     console.log(`[BackgroundProcess] Summary generated.`);
 
-    // 5. Update Sermon in AsyncStorage
-    console.log(`[BackgroundProcess] Updating sermon record: ${sermonId}`);
-    const existingData = await AsyncStorage.getItem('savedSermons') || '[]';
-    const sermonsArray: SavedSermon[] = JSON.parse(existingData);
-    const sermonIndex = sermonsArray.findIndex(s => s.id === sermonId);
-    if (sermonIndex === -1) {
-      throw new Error(`Cannot find sermon with ID ${sermonId} to update.`);
-    }
-    sermonsArray[sermonIndex] = {
-      ...sermonsArray[sermonIndex],
-      transcript: transcript,
-      audioUrl: audioUri, // Save the final local URI (or uploadUrl if preferred)
-      summary: summary || undefined, // Add summary, handle null from OpenAI
-      // Update title if needed, maybe based on summary?
-    };
-    await AsyncStorage.setItem('savedSermons', JSON.stringify(sermonsArray));
+    // 5. Update Sermon in AsyncStorage with results
+    console.log(`[BackgroundProcess] Updating sermon record: ${sermonId} with results...`);
+    await updateSermonStatus(sermonId, { 
+      transcript: transcript, 
+      audioUrl: audioUri, 
+      summary: summary || undefined,
+      processingStatus: 'completed', 
+      processingError: undefined, // Clear any previous error
+      // Potentially update title here too?
+      // title: summary ? generateTitleFromSummary(summary) : undefined,
+    });
     console.log(`[BackgroundProcess] Sermon record updated successfully.`);
-    finalStatus = 'Success';
 
   } catch (error: any) {
     console.error('[BackgroundProcess] Error:', error);
-    finalStatus = error.message || 'Background processing failed.';
-    // Optionally, update the sermon record with an error status?
+    finalError = error.message || 'Background processing failed.';
+    // Update storage with error status
+    try {
+      await updateSermonStatus(sermonId, { 
+        processingStatus: 'error', 
+        processingError: finalError 
+      });
+    } catch (updateError) {
+      console.error(`[BackgroundProcess] CRITICAL: Failed to update sermon ${sermonId} with error status:`, updateError);
+    }
   } finally {
-    dispatch({ type: 'FINISH_PROCESSING', payload: finalStatus ? { error: finalStatus } : undefined });
+    // Dispatch FINISH_PROCESSING, ensuring payload error is string | undefined
+    let dispatchPayload: { error?: string } | undefined = undefined;
+    if (finalError) {
+      dispatchPayload = { error: finalError ?? undefined }; 
+    }
+    dispatch({ 
+      type: 'FINISH_PROCESSING', 
+      payload: dispatchPayload
+    });
+  }
+}
+
+// Helper function to update specific fields of a sermon in AsyncStorage
+async function updateSermonStatus(
+  sermonId: string, 
+  updates: Partial<SavedSermon> // Use Partial to allow updating specific fields
+): Promise<void> {
+  try {
+    const existingData = await AsyncStorage.getItem('savedSermons') || '[]';
+    const sermonsArray: SavedSermon[] = JSON.parse(existingData);
+    const sermonIndex = sermonsArray.findIndex(s => s.id === sermonId);
+
+    if (sermonIndex === -1) {
+      throw new Error(`Cannot find sermon with ID ${sermonId} to update status.`);
+    }
+
+    // Merge updates with existing sermon data
+    sermonsArray[sermonIndex] = { 
+      ...sermonsArray[sermonIndex], 
+      ...updates // Apply the updates
+    };
+
+    await AsyncStorage.setItem('savedSermons', JSON.stringify(sermonsArray));
+  } catch (error) {
+    console.error(`[updateSermonStatus] Error updating sermon ${sermonId}:`, error);
+    throw error; // Re-throw to be caught by the caller if needed
   }
 }
 

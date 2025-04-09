@@ -8,4 +8,6 @@ export interface SavedSermon {
   notes?: string;
   audioUrl?: string;
   summary?: StructuredSummary;
+  processingStatus?: 'processing' | 'completed' | 'error';
+  processingError?: string;
 } 
