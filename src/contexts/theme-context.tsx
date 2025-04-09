@@ -30,6 +30,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   };
 
   // Get active color scheme based on dark mode setting
+  // Restore dynamic theme based on isDarkMode state
   const colors = isDarkMode ? defaultTheme.colors.dark : defaultTheme.colors.light;
 
   const value = {

@@ -4,6 +4,8 @@ import { useTheme } from '../contexts/theme-context';
 import { AudioRecorder } from '../components/AudioRecorder';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useThemeStyles } from '../hooks/useThemeStyles';
+import { ErrorDisplay } from '../components/ui/ErrorDisplay';
 
 // Assume these functions exist and are imported from your service file
 import {
@@ -22,6 +24,24 @@ interface SavedSermon {
   title?: string; 
   transcript: string; 
   audioUrl?: string;
+}
+
+// Helper function to format error messages
+function formatApiError(error: any, defaultMessage: string): string {
+  // Basic check for Axios-like error structure (common with fetch wrappers)
+  if (error?.response?.data?.error) {
+    return `API Error: ${error.response.data.error}`;
+  }
+  // Check for AssemblyAI specific error in job status
+  if (error?.status === 'error' && error?.error) {
+      return `Transcription Error: ${error.error}`;
+  }
+  // Standard Error object message
+  if (error?.message) {
+    return error.message;
+  }
+  // Fallback
+  return defaultMessage;
 }
 
 export function TranscriptionScreen() {
@@ -104,7 +124,8 @@ export function TranscriptionScreen() {
 
         } else if (result.status === 'error') {
           if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-          setErrorMessage(result.error || 'Transcription job failed.');
+          // Use the helper to format the error from the result object
+          setErrorMessage(formatApiError(result, 'Transcription job failed.'));
           setUiState('Error');
           setJobId(null);
           await cleanupFullAudioFile(null);
@@ -115,7 +136,8 @@ export function TranscriptionScreen() {
       } catch (error: any) {
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
         console.error("Polling Error:", error);
-        setErrorMessage(error.message || "Failed to check transcription status.");
+        // Use the helper to format the error from the catch block
+        setErrorMessage(formatApiError(error, "Failed to check transcription status."));
         setUiState('Error');
         setJobId(null);
         await cleanupFullAudioFile(null);
@@ -145,7 +167,8 @@ export function TranscriptionScreen() {
 
     } catch (error: any) {
       console.error("Batch Processing Error:", error);
-      setErrorMessage(error.message || "Failed to start transcription process.");
+      // Use the helper to format the error from the catch block
+      setErrorMessage(formatApiError(error, "Failed to start transcription process."));
       setUiState('Error');
       // Clean up the file immediately if the process fails early
       await cleanupFullAudioFile(audioUri); 
@@ -253,8 +276,11 @@ export function TranscriptionScreen() {
         return (
           <View style={styles.centeredInfo}>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={[styles.infoText, { color: colors.text.secondary, marginTop: 15 }]}>
-              Uploading audio file...
+            <Text style={[styles.infoText, { color: colors.text.primary, fontWeight: 'bold' }]}>
+              Uploading Audio...
+            </Text>
+            <Text style={[styles.infoTextSmall, { color: colors.text.secondary }]}>
+              Please wait while the recording is securely uploaded.
             </Text>
           </View>
         );
@@ -262,10 +288,12 @@ export function TranscriptionScreen() {
         return (
           <View style={styles.centeredInfo}>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={[styles.infoText, { color: colors.text.secondary, marginTop: 15 }]}>
-              Processing transcription (this may take a moment)...
+            <Text style={[styles.infoText, { color: colors.text.primary, fontWeight: 'bold' }]}>
+              Transcribing Audio...
             </Text>
-            {jobId && <Text style={[styles.infoTextSmall, { color: colors.text.tertiary }]}>Job ID: {jobId}</Text>}
+            <Text style={[styles.infoTextSmall, { color: colors.text.secondary }]}>
+              This may take a few moments depending on the length of the recording.
+            </Text>
           </View>
         );
       case 'Complete':
@@ -287,12 +315,10 @@ export function TranscriptionScreen() {
         );
       case 'Error':
         return (
-          <View style={styles.centeredInfo}>
-            <Text style={[styles.errorTitle, { color: colors.ui.error }]}>Error</Text>
-            <Text style={[styles.errorText, { color: colors.text.secondary }]}>
-              {errorMessage || 'An unknown error occurred.'}
-            </Text>
-          </View>
+          <ErrorDisplay 
+            message={errorMessage || 'An unknown error occurred.'}
+            onRetry={handleReset}
+          />
         );
       default:
         return null;
@@ -385,16 +411,6 @@ const styles = StyleSheet.create({
   transcriptionText: {
     fontSize: 15,
     lineHeight: 22,
-  },
-  // Error display styles
-  errorTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  errorText: {
-    fontSize: 15,
-    textAlign: 'center',
   },
   footer: {
     paddingHorizontal: 16,

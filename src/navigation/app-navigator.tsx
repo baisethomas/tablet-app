@@ -3,12 +3,16 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { NavigationContainer, ParamListBase } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
+import { Ionicons } from '@expo/vector-icons';
 import { HomeScreen } from '../screens/home-screen';
 import { TranscriptionScreen } from '../screens/transcription-screen';
 import { TranscriptionTestScreen } from '../screens/TranscriptionTestScreen';
 import { LibraryScreen } from '../screens/library-screen';
 import { SermonDetailScreen } from '../screens/sermon-detail-screen';
 import { useTheme } from '../contexts/theme-context';
+import { useRecording } from '../contexts/recording-context';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 // Define navigation param types
 export type RootStackParamList = {
@@ -39,14 +43,32 @@ function AccountScreen() {
 
 // Custom middle button component for Record
 interface RecordButtonProps {
-  onPress: () => void;
+  // No onPress needed directly, action handled by context
 }
 
-function RecordButton({ onPress }: RecordButtonProps) {
+function RecordButton() {
+  const { startRecording, isRecording } = useRecording();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  const handlePress = async () => {
+    if (isRecording) return;
+
+    const newSermonId = await startRecording();
+    if (newSermonId) {
+      navigation.navigate('SermonDetail', { 
+        sermonId: newSermonId, 
+        initialTab: 'Notes'
+      });
+    } else {
+      console.error("Failed to start recording or get sermon ID.");
+    }
+  };
+
   return (
     <TouchableOpacity
       style={styles.recordButton}
-      onPress={onPress}
+      onPress={handlePress}
+      disabled={isRecording}
     >
       <View style={styles.recordButtonInner} />
     </TouchableOpacity>
@@ -83,8 +105,8 @@ function MainTabs() {
         name="Home" 
         component={HomeScreen} 
         options={{
-          tabBarIcon: ({ color }: { color: string }) => (
-            <Text style={{ color, fontSize: 20, paddingBottom: 3 }}>🏠</Text>
+          tabBarIcon: ({ color, size, focused }: { color: string; size: number; focused: boolean }) => (
+            <Ionicons name={focused ? "home" : "home-outline"} size={size} color={color} />
           ),
           tabBarLabel: 'Home',
         }}
@@ -92,27 +114,20 @@ function MainTabs() {
       <Tab.Screen 
         name="Record" 
         component={EmptyComponent}
-        options={({ navigation }) => ({
+        options={{
           tabBarButton: () => (
-            <RecordButton 
-              onPress={() => navigation.navigate('Transcription')} 
-            />
+            <RecordButton />
           ),
           tabBarLabel: () => null,
-        })}
-        listeners={({ navigation }) => ({
-          tabPress: (e: { preventDefault: () => void }) => {
-            e.preventDefault();
-            navigation.navigate('Transcription');
-          },
-        })}
+        }}
+        listeners={{}}
       />
       <Tab.Screen 
         name="Account" 
         component={AccountScreen} 
         options={{
-          tabBarIcon: ({ color }: { color: string }) => (
-            <Text style={{ color, fontSize: 20, paddingBottom: 3 }}>👤</Text>
+          tabBarIcon: ({ color, size, focused }: { color: string; size: number; focused: boolean }) => (
+            <Ionicons name={focused ? "person-circle" : "person-circle-outline"} size={size} color={color} />
           ),
           tabBarLabel: 'Account',
         }}
@@ -122,11 +137,19 @@ function MainTabs() {
 }
 
 export function AppNavigator() {
+  const { colors } = useTheme();
+
   return (
     <NavigationContainer>
       <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
+        screenOptions={{ 
+          headerShown: false, 
+          headerStyle: { 
+            backgroundColor: colors.background.primary,
+            shadowOpacity: 0, 
+            elevation: 0, 
+          },
+          headerTintColor: colors.text.primary,
         }}
       >
         <Stack.Screen name="Main" component={MainTabs} />
@@ -135,7 +158,7 @@ export function AppNavigator() {
           component={TranscriptionScreen} 
           options={{ 
             headerShown: true, 
-            title: 'Record & Transcribe' 
+            title: 'Record & Transcribe',
           }} 
         />
         <Stack.Screen 
@@ -177,5 +200,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'white',
     alignSelf: 'center',
+  },
+  centeredInfo: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  infoText: {
+    fontSize: 18,
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  infoTextSmall: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 0,
   },
 }); 

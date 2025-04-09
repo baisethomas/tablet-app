@@ -3,13 +3,14 @@ import {
   View, 
   Text, 
   StyleSheet, 
-  SafeAreaView, 
   ActivityIndicator, 
   Alert,
   StatusBar
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/theme-context';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
@@ -18,19 +19,33 @@ import { SavedSermon } from '../types/sermon';
 import { SummaryTab } from '../components/sermon-detail/SummaryTab';
 import { TranscriptTab } from '../components/sermon-detail/TranscriptTab';
 import { NotesTab } from '../components/sermon-detail/NotesTab';
+import { ErrorDisplay } from '../components/ui/ErrorDisplay';
 
-// Define the route prop type for this screen
-type SermonDetailScreenRouteProp = RouteProp<RootStackParamList, 'SermonDetail'>;
+// Define the route prop type, including optional initialTab
+type SermonDetailScreenRouteProp = RouteProp<RootStackParamList & { SermonDetail: { initialTab?: keyof SermonDetailTabParamList } }, 'SermonDetail'>;
+
+// Define ParamList for the Top Tabs themselves
+type SermonDetailTabParamList = {
+  Summary: undefined;
+  Transcript: undefined;
+  Notes: undefined;
+};
+
+// Define a general type for screen props within this tab navigator
+type SermonDetailTabScreenProps<T extends keyof SermonDetailTabParamList> = {
+  navigation: any; // Using any for simplicity, could import specific type if needed
+  route: RouteProp<SermonDetailTabParamList, T>;
+};
 
 // Create tab navigator
-const Tab = createMaterialTopTabNavigator();
+const Tab = createMaterialTopTabNavigator<SermonDetailTabParamList>();
 
 export function SermonDetailScreen() {
-  const { colors } = useTheme();
+  const { colors, theme } = useTheme();
   const { fontWeight } = useThemeStyles();
   const route = useRoute<SermonDetailScreenRouteProp>();
   const navigation = useNavigation();
-  const { sermonId } = route.params;
+  const { sermonId, initialTab } = route.params;
 
   const [sermon, setSermon] = useState<SavedSermon | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,7 +76,7 @@ export function SermonDetailScreen() {
           }
         } catch (parseError) {
           console.error('Error parsing saved sermons:', parseError);
-          throw new Error('Could not load sermon detail.');
+          throw new Error('Failed to read saved data. It might be corrupted.');
         }
 
         console.log("Found sermons array with length:", sermonsArray.length);
@@ -90,9 +105,9 @@ export function SermonDetailScreen() {
     }
   }, [sermonId]);
 
-  // Handle sermon updates (like when notes are saved)
-  const handleSermonUpdate = (updatedSermon: SavedSermon) => {
-    console.log("Sermon updated:", updatedSermon);
+  // Use the correct prop name for NotesTab
+  const handleNotesSaved = (updatedSermon: SavedSermon) => {
+    console.log("Sermon notes updated in parent:", updatedSermon);
     setSermon(updatedSermon);
   };
 
@@ -123,43 +138,41 @@ export function SermonDetailScreen() {
       metadataContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingHorizontal: theme.spacing.md,
+        paddingBottom: theme.spacing.sm,
+        flexWrap: 'wrap',
+        backgroundColor: colors.background.primary,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: colors.ui.border,
       },
       metadataItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginRight: 12,
+        marginRight: theme.spacing.md,
+        marginBottom: theme.spacing.xs,
       },
       metadataText: {
-        fontSize: 14,
+        fontSize: theme.fontSizes.button,
         color: colors.text.secondary,
-        marginLeft: 4,
+        marginLeft: theme.spacing.xs,
       },
-      metadataIcon: {
-        width: 16,
-        height: 16,
-        fontSize: 16,
-        color: colors.text.tertiary,
-      }
     });
     
     return (
       <View style={styles.metadataContainer}>
         <View style={styles.metadataItem}>
-          <Text style={styles.metadataIcon}>📅</Text>
+          <Ionicons name="calendar-outline" size={16} color={colors.text.tertiary} />
           <Text style={styles.metadataText}>{formattedDate}</Text>
         </View>
         <View style={styles.metadataItem}>
-          <Text style={styles.metadataIcon}>⏱️</Text>
-          <Text style={styles.metadataText}>{formattedTime}</Text>
+          <Text style={[styles.metadataText, { marginLeft: 0 }]}>{formattedTime}</Text>
         </View>
         <View style={styles.metadataItem}>
-          <Text style={styles.metadataIcon}>⏱️</Text>
+          <Ionicons name="timer-outline" size={16} color={colors.text.tertiary} />
           <Text style={styles.metadataText}>{duration}</Text>
         </View>
         <View style={styles.metadataItem}>
-          <Text style={styles.metadataIcon}>👤</Text>
+          <Ionicons name="person-outline" size={16} color={colors.text.tertiary} />
           <Text style={styles.metadataText}>You</Text>
         </View>
       </View>
@@ -175,32 +188,50 @@ export function SermonDetailScreen() {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
+      backgroundColor: colors.background.primary,
     },
     errorContainer: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      padding: 20,
+      padding: theme.spacing.lg,
+      backgroundColor: colors.background.primary,
     },
     errorText: {
-      fontSize: 16,
+      fontSize: theme.fontSizes.body,
       textAlign: 'center',
       color: colors.ui.error,
     },
     titleText: {
-      fontSize: 24,
+      fontSize: theme.fontSizes.heading,
       fontWeight: fontWeight('bold'),
       color: colors.text.primary,
-      paddingHorizontal: 16,
-      paddingTop: 16,
-      paddingBottom: 8,
-    }
+      paddingHorizontal: theme.spacing.md,
+      paddingBottom: theme.spacing.sm,
+      backgroundColor: colors.background.primary,
+    },
+    tabBar: {
+      backgroundColor: colors.background.primary,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.ui.border,
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0,
+      elevation: 0,
+    },
+    tabIndicator: {
+      backgroundColor: colors.primary,
+    },
+    tabLabel: {
+      fontSize: theme.fontSizes.button,
+      fontWeight: fontWeight('medium'),
+      textTransform: 'none',
+    },
   });
 
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={colors.text.primary === '#F5F5F5' ? 'light-content' : 'dark-content'} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -211,10 +242,10 @@ export function SermonDetailScreen() {
   if (error || !sermon) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error || 'No sermon data found'}</Text>
-        </View>
+        <StatusBar barStyle={colors.text.primary === '#F5F5F5' ? 'light-content' : 'dark-content'} />
+        <ErrorDisplay 
+          message={error || 'Sermon data could not be loaded.'} 
+        />
       </SafeAreaView>
     );
   }
@@ -230,39 +261,43 @@ export function SermonDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={colors.text.primary === '#F5F5F5' ? 'light-content' : 'dark-content'} />
       <Text style={styles.titleText}>
         {sermon.title || 'Sermon'}
       </Text>
       {renderSermonMetadata()}
       
-      {/* Tab Navigation */}
+      {/* Tab Navigation - Pass initialRouteName */}
       <Tab.Navigator
+        initialRouteName={initialTab || 'Summary'} // Set initial tab based on param, default to Summary
         screenOptions={{
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.text.tertiary,
-          tabBarIndicatorStyle: { backgroundColor: colors.primary },
-          tabBarStyle: { 
-            backgroundColor: colors.background.primary,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.ui.border,
-          },
-          tabBarLabelStyle: {
-            fontSize: 14,
-            fontWeight: '500',
-            textTransform: 'none',
-          },
-          lazy: true
+          tabBarIndicatorStyle: styles.tabIndicator,
+          tabBarStyle: styles.tabBar,
+          tabBarLabelStyle: styles.tabLabel,
+          swipeEnabled: true,
+          lazy: true,
         }}
       >
         <Tab.Screen name="Summary">
-          {() => <SummaryTab sermon={sermon} />}
+          {(props: SermonDetailTabScreenProps<'Summary'>) => 
+            <SummaryTab {...props} sermon={sermon} />
+          } 
         </Tab.Screen>
         <Tab.Screen name="Transcript">
-          {() => <TranscriptTab sermon={sermon} />}
+          {(props: SermonDetailTabScreenProps<'Transcript'>) => 
+            <TranscriptTab {...props} sermon={sermon} />
+          } 
         </Tab.Screen>
         <Tab.Screen name="Notes">
-          {() => <NotesTab sermon={sermon} onNotesSaved={handleSermonUpdate} />}
+          {(props: SermonDetailTabScreenProps<'Notes'>) => (
+            <NotesTab 
+              {...props} 
+              sermon={sermon} 
+              onNotesSaved={handleNotesSaved}
+            />
+          )}
         </Tab.Screen>
       </Tab.Navigator>
     </SafeAreaView>

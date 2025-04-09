@@ -38,6 +38,7 @@ export default {
     extra: {
       ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY,
       APP_ENV: process.env.APP_ENV || 'development',
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     }
   }
 }; 

@@ -4,7 +4,7 @@ import {
   Text, 
   StyleSheet, 
   SafeAreaView, 
-  FlatList, 
+  SectionList,
   TouchableOpacity, 
   ActivityIndicator,
   RefreshControl,
@@ -12,11 +12,14 @@ import {
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RouteProp } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/theme-context';
 import type { RootStackParamList } from '../navigation/app-navigator';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { createSampleSermonData, clearSermonData } from '../utils/dev-helpers';
+import { ErrorDisplay } from '../components/ui/ErrorDisplay';
 
 // Define the structure for saved data
 interface SavedSermon {
@@ -26,20 +29,23 @@ interface SavedSermon {
   transcript: string; 
 }
 
-// For grouped data in FlatList
-interface GroupedData {
-  date: string;
+// Rename interface for SectionList structure
+interface SectionData {
+  title: string; // Renamed from 'date' to 'title' for clarity
   data: SavedSermon[];
 }
 
 // Define navigation prop type for this screen
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
-// Helper function to group sermons by date
-function groupSermonsByDate(sermons: SavedSermon[]): GroupedData[] {
+// Helper function to group sermons by date for SectionList
+function groupSermonsByDate(sermons: SavedSermon[]): SectionData[] {
   const groups: Record<string, SavedSermon[]> = {};
   
-  sermons.forEach(sermon => {
+  // Sort sermons newest first before grouping
+  const sortedSermons = [...sermons].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  sortedSermons.forEach(sermon => {
     const date = new Date(sermon.date);
     const today = new Date();
     const yesterday = new Date(today);
@@ -52,7 +58,6 @@ function groupSermonsByDate(sermons: SavedSermon[]): GroupedData[] {
     } else if (date.toDateString() === yesterday.toDateString()) {
       groupKey = 'Yesterday';
     } else {
-      // Format like "Friday, April 4"
       groupKey = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
     }
     
@@ -63,15 +68,45 @@ function groupSermonsByDate(sermons: SavedSermon[]): GroupedData[] {
     groups[groupKey].push(sermon);
   });
   
-  // Convert to array format for FlatList
-  return Object.entries(groups).map(([date, sermons]) => ({
-    date,
-    data: sermons
-  }));
+  // Convert to SectionList array format
+  // Define desired order of sections
+  const sectionOrder = ['Today', 'Yesterday']; 
+  const sections: SectionData[] = [];
+
+  // Add Today and Yesterday first if they exist
+  sectionOrder.forEach(key => {
+    if (groups[key]) {
+      sections.push({ title: key, data: groups[key] });
+      delete groups[key]; // Remove from groups to avoid duplication
+    }
+  });
+
+  // Add remaining date groups (sorted chronologically implicitly by how they were added)
+  Object.entries(groups)
+    .sort(([dateA], [dateB]) => new Date(sermons.find(s => s.date === dateB)?.date || 0).getTime() - new Date(sermons.find(s => s.date === dateA)?.date || 0).getTime()) // Attempt to sort remaining dates
+    .forEach(([title, data]) => {
+       sections.push({ title, data });
+    });
+
+  return sections;
+}
+
+// Helper to format duration
+function formatSermonDuration(transcript: string): string {
+  if (!transcript) return '0 secs';
+  const words = transcript.split(' ').length;
+  const totalSeconds = Math.max(1, Math.round(words / 150 * 60)); // Approx 150 wpm
+
+  if (totalSeconds < 60) {
+    return `${totalSeconds} secs`;
+  } else {
+    const minutes = Math.round(totalSeconds / 60);
+    return `${minutes} mins`;
+  }
 }
 
 export function HomeScreen() {
-  const { colors } = useTheme();
+  const { colors, theme } = useTheme();
   const { fontWeight } = useThemeStyles();
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const [sermons, setSermons] = useState<SavedSermon[]>([]);
@@ -83,7 +118,7 @@ export function HomeScreen() {
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: colors.background.primary,
     },
     header: {
       flexDirection: 'row',
@@ -91,6 +126,9 @@ export function HomeScreen() {
       justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.ui.border,
+      backgroundColor: colors.background.primary,
     },
     logoContainer: {
       flexDirection: 'row',
@@ -99,7 +137,7 @@ export function HomeScreen() {
     logoText: {
       fontSize: 24,
       fontWeight: fontWeight('bold'),
-      color: '#0077FF', // Brand blue, similar to Otter.ai
+      color: colors.primary,
     },
     headerActions: {
       flexDirection: 'row',
@@ -109,14 +147,15 @@ export function HomeScreen() {
       width: 40,
       height: 40,
       borderRadius: 20,
-      backgroundColor: '#F5F5F5',
+      backgroundColor: colors.background.secondary,
       alignItems: 'center',
       justifyContent: 'center',
     },
     tabContainer: {
       flexDirection: 'row',
-      borderBottomWidth: 1,
-      borderBottomColor: '#E8E8E8',
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.ui.border,
+      backgroundColor: colors.background.primary,
     },
     tab: {
       flex: 1,
@@ -125,102 +164,108 @@ export function HomeScreen() {
     },
     activeTab: {
       borderBottomWidth: 2,
-      borderBottomColor: '#0077FF',
+      borderBottomColor: colors.primary,
     },
     tabText: {
       fontSize: 16,
-      color: '#737373',
+      color: colors.text.secondary,
     },
     activeTabText: {
-      color: '#0077FF',
+      color: colors.primary,
       fontWeight: fontWeight('medium'),
     },
     section: {
-      marginBottom: 24,
     },
     sectionHeader: {
       fontSize: 16,
       fontWeight: fontWeight('semiBold'),
-      marginVertical: 12,
-      marginHorizontal: 16,
-      color: '#333333',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      color: colors.text.secondary,
+      backgroundColor: colors.background.primary,
     },
     sermonCard: {
-      backgroundColor: '#FFFFFF',
-      borderRadius: 12,
-      marginHorizontal: 16,
-      marginBottom: 12,
-      padding: 16,
-      borderWidth: 1,
-      borderColor: '#E8E8E8',
+      backgroundColor: colors.background.secondary, 
+      borderRadius: 8,
+      marginHorizontal: theme.spacing.md, // Keep horizontal margin
+      marginVertical: theme.spacing.sm, // Increase vertical margin
+      padding: theme.spacing.md,
+      // Remove shadow
+      // shadowColor: '#000',
+      // shadowOffset: { width: 0, height: 1 },
+      // shadowOpacity: 0.05,
+      // shadowRadius: 2,
+      // elevation: 1,
+      // Add subtle border instead
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.ui.border, 
     },
     cardHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      marginBottom: 8,
+      alignItems: 'center', // Align time better vertically
+      marginBottom: theme.spacing.xs, // Slightly reduce bottom margin
     },
     cardTitle: {
-      fontSize: 18,
+      fontSize: theme.fontSizes.body, 
       fontWeight: fontWeight('semiBold'),
-      color: '#333333',
+      color: colors.text.primary,
+      flexShrink: 1, 
+      marginRight: theme.spacing.sm, 
+      // Remove marginBottom as header handles spacing
     },
     cardTime: {
-      fontSize: 14,
-      color: '#737373',
+      fontSize: theme.fontSizes.caption, 
+      color: colors.text.secondary,
+      flexShrink: 0, 
     },
     cardPreview: {
-      fontSize: 16,
-      color: '#333333',
-      lineHeight: 22,
-    },
-    commentCount: {
-      position: 'absolute',
-      right: 16,
-      bottom: 16,
-      backgroundColor: '#F0F0F0',
-      width: 28,
-      height: 28,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    commentText: {
-      fontSize: 14,
-      color: '#737373',
+      fontSize: theme.fontSizes.button, 
+      color: colors.text.secondary, 
+      lineHeight: theme.lineHeights.button, 
+      marginTop: theme.spacing.xs, 
+      marginLeft: theme.spacing.sm, // Add left margin for indent
     },
     centeredInfo: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 20,
+      backgroundColor: colors.background.primary,
     },
     emptyText: {
       fontSize: 18,
-      color: '#737373',
+      color: colors.text.secondary,
       marginBottom: 20,
     },
     errorText: {
       fontSize: 16,
-      color: '#B55A5A',
+      color: colors.ui.error,
       textAlign: 'center',
       marginBottom: 20,
     },
     retryButton: {
       paddingVertical: 10,
       paddingHorizontal: 20,
-      backgroundColor: '#F0F0F0',
+      backgroundColor: colors.background.secondary,
       borderRadius: 8,
     },
     newRecordingButton: {
-      backgroundColor: '#0077FF',
+      backgroundColor: colors.primary,
       paddingVertical: 12,
       paddingHorizontal: 24,
       borderRadius: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
     },
     newRecordingText: {
       color: '#FFFFFF',
-      fontSize: 16,
+      fontSize: theme.fontSizes.body,
       fontWeight: fontWeight('medium'),
+      marginLeft: theme.spacing.sm,
+    },
+    listContentContainer: {
+      paddingBottom: theme.spacing.md, // Add padding at the bottom of the list
     },
   });
 
@@ -235,17 +280,21 @@ export function HomeScreen() {
           if (!Array.isArray(sermonsArray)) {
             console.warn('Saved sermons data is not an array, resetting.');
             sermonsArray = [];
+            // Optionally set a specific error for format issue
+            // setError('Saved data has an incorrect format.'); 
           }
         } catch (parseError) {
           console.error('Error parsing saved sermons:', parseError);
-          setError('Could not load saved sermons.');
+          // Set specific message for parsing error
+          setError('Failed to read saved data. It might be corrupted.'); 
           sermonsArray = [];
         }
       }
       setSermons(sermonsArray);
     } catch (e) {
       console.error('Failed to fetch sermons from storage:', e);
-      setError('Failed to load sermons.');
+      // Keep generic message for other storage errors
+      setError('Failed to load sermons.'); 
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -286,19 +335,18 @@ export function HomeScreen() {
   };
 
   const renderSermonItem = ({ item }: { item: SavedSermon }) => {
-    // Format the time like "5:04PM"
+    // Format time
     const time = new Date(item.date).toLocaleTimeString('en-US', { 
       hour: 'numeric', 
       minute: '2-digit', 
       hour12: true 
     });
     
-    // Calculate minutes based on transcript length (placeholder calculation)
-    const words = item.transcript.split(' ').length;
-    const minutes = Math.max(1, Math.round(words / 150)); // Approx 150 words per minute of speech
+    // Format duration using helper
+    const duration = formatSermonDuration(item.transcript);
     
-    // Get first line of transcript for preview
-    const previewText = item.transcript.split('\n')[0] || 'No transcript available';
+    // Get preview text (first line, no bullet)
+    const previewText = item.transcript?.split('\n')[0] || 'No transcript available';
     
     return (
       <TouchableOpacity 
@@ -306,17 +354,14 @@ export function HomeScreen() {
         onPress={() => handlePressItem(item.id)}
       >
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>{item.title || 'Note'}</Text>
+          <Text style={styles.cardTitle} numberOfLines={1}>{item.title || 'Note'}</Text>
+          {/* Combine time and duration */}
           <Text style={styles.cardTime}>
-            {time} · {minutes} {minutes === 1 ? 'min' : 'mins'}
+            {time} · {duration}
           </Text>
         </View>
-        <Text style={styles.cardPreview}>• {previewText}</Text>
-        
-        {/* Placeholder for comments count, similar to Otter.ai UI */}
-        <View style={styles.commentCount}>
-          <Text style={styles.commentText}>2</Text>
-        </View>
+        {/* Render preview text directly */}
+        <Text style={styles.cardPreview} numberOfLines={2}>{previewText}</Text>
       </TouchableOpacity>
     );
   };
@@ -332,18 +377,16 @@ export function HomeScreen() {
     
     if (error) {
       return (
-        <View style={styles.centeredInfo}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={loadSermons} style={styles.retryButton}>
-            <Text style={{ color: colors.primary }}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <ErrorDisplay 
+          message={error} 
+          onRetry={loadSermons} 
+        />
       );
     }
     
-    const groupedData = groupSermonsByDate(sermons);
+    const sections = groupSermonsByDate(sermons);
     
-    if (sermons.length === 0) {
+    if (sections.length === 0 && !isLoading && !error) {
       return (
         <View style={styles.centeredInfo}>
           <Text style={styles.emptyText}>No recordings yet</Text>
@@ -351,14 +394,15 @@ export function HomeScreen() {
             style={styles.newRecordingButton}
             onPress={handleNewTranscription}
           >
+            <Ionicons name="mic-outline" size={20} color="#FFFFFF" />
             <Text style={styles.newRecordingText}>Start New Recording</Text>
           </TouchableOpacity>
           {__DEV__ && (
             <TouchableOpacity 
-              style={[styles.newRecordingButton, { backgroundColor: colors.ui.info, marginTop: 12 }]}
+              style={[styles.newRecordingButton, { backgroundColor: colors.ui.info, marginTop: theme.spacing.md }]}
               onPress={handleGenerateDemoData}
             >
-              <Text style={styles.newRecordingText}>Generate Demo Data</Text>
+              <Text style={[styles.newRecordingText, { color: '#FFFFFF' }]}>Generate Demo Data</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -366,19 +410,14 @@ export function HomeScreen() {
     }
     
     return (
-      <FlatList
-        data={groupedData}
-        keyExtractor={(item) => item.date}
-        renderItem={({ item }) => (
-          <View style={styles.section}>
-            <Text style={styles.sectionHeader}>{item.date}</Text>
-            {item.data.map(sermon => (
-              <View key={sermon.id}>
-                {renderSermonItem({ item: sermon })}
-              </View>
-            ))}
-          </View>
+      <SectionList
+        sections={sections}
+        keyExtractor={(item, index) => item.id + index}
+        renderItem={renderSermonItem}
+        renderSectionHeader={({ section: { title } }) => (
+          <Text style={styles.sectionHeader}>{title}</Text>
         )}
+        stickySectionHeadersEnabled={false}
         refreshControl={
           <RefreshControl 
             refreshing={isRefreshing} 
@@ -386,6 +425,7 @@ export function HomeScreen() {
             tintColor={colors.primary}
           />
         }
+        contentContainerStyle={styles.listContentContainer}
       />
     );
   };
@@ -409,19 +449,22 @@ export function HomeScreen() {
       </View>
       
       <View style={styles.headerActions}>
+        {/* Search Icon */}
         <TouchableOpacity style={styles.headerButton}>
-          <Text>🔍</Text>
+          <Ionicons name="search" size={20} color={colors.text.secondary} />
         </TouchableOpacity>
         
+        {/* Add Icon */}
         <TouchableOpacity 
           style={styles.headerButton}
           onPress={handleNewTranscription}
         >
-          <Text>+</Text>
+          <Ionicons name="add" size={24} color={colors.text.secondary} />
         </TouchableOpacity>
         
+        {/* Notifications Icon */}
         <TouchableOpacity style={styles.headerButton}>
-          <Text>🔔</Text>
+          <Ionicons name="notifications-outline" size={22} color={colors.text.secondary} />
         </TouchableOpacity>
       </View>
     </View>

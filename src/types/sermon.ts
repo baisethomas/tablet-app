@@ -1,3 +1,5 @@
+import { StructuredSummary } from '../services/openai';
+
 export interface SavedSermon {
   id: string; 
   date: string; 
@@ -5,4 +7,5 @@ export interface SavedSermon {
   transcript: string; 
   notes?: string;
   audioUrl?: string;
+  summary?: StructuredSummary;
 } 

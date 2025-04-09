@@ -22,46 +22,50 @@ This document tracks completed and pending tasks for the project.
 
 ## Core Features & Functionality
 
-*   ✅ **Audio Recording:** Implement basic recording using `expo-av`.
-*   ✅ **Batch Transcription:** Integrate AssemblyAI batch workflow (Upload -> Submit -> Poll).
-*   ✅ **Local Sermon Storage:** Save Transcript, Notes, and **Audio URL** to `AsyncStorage`.
-*   ✅ **Library Screen:** Fetch and display list of saved sermons from `AsyncStorage`.
-*   ✅ **Sermon Detail Screen:** Framework with Tab Navigator.
-*   ✅ **Transcript Tab:** Display saved transcript text.
+*   ✅ **Recording & Transcription:** Core audio recording, AssemblyAI upload, batch transcription polling.
+*   ✅ **AI Summary Generation:** Implemented OpenAI summary generation (Overview, Scriptures, Key Points) in `SummaryTab`.
 *   ✅ **Notes Tab:** Implement viewing, editing, and saving notes to `AsyncStorage`.
-*   🔄 **Audio Playback:**
-    *   ✅ Implement core playback logic (`expo-av` sound loading, status updates, play/pause) in `TranscriptTab`.
-    *   ✅ Integrate player UI (Progress bar, time, button) into `TranscriptTab`.
+*   ✅ **Audio Playback:**
+    *   ✅ Implement core playback logic (`expo-av`) via `useAudioPlayer` hook.
+    *   ✅ Integrate player UI (Slider, time, buttons) into `TranscriptTab`.
+    *   ✅ Implement seeking/scrubbing & Skip buttons.
     *   ⏳ Verify playback works correctly after migrating files to clean setup.
-*   ⏳ **Summary Tab:** Placeholder, functionality TBD (AI integration is future).
-*   ⏳ **Error Handling:** Implement robust error handling for recording, API calls, and storage.
-    *   ⏳ User-friendly error messages.
-    *   ⏳ Retry mechanism for failed uploads/API calls.
-    *   ⏳ Network connectivity checks.
+*   ✅ **Global Recording Flow:** Refactor recording to be globally managed.
+    *   ✅ Implement `RecordingContext` (state, reducer, provider).
+    *   ✅ Implement `startRecording` (permissions, placeholder sermon, navigate to Notes).
+    *   ✅ Implement `stopRecordingAndProcess` (trigger background processing).
+    *   ✅ Implement `RecordingStatusBar` UI.
+    *   ✅ Refactor Home Screen record button.
+    *   ⏳ Pause/Resume reliability check.
+    *   ⏳ Background processing robustness (notifications?, error state in sermon record?).
+*   ✅ **Error Handling:** Implement robust error handling.
+    *   ✅ Consistent UI (`ErrorDisplay`).
+    *   ✅ Specific API/Storage messages.
+    *   ✅ Global `ErrorBoundary`.
 
 ---
 
 ## UI/UX Enhancements
 
-*   ⏳ Improve Transcription UI Feedback (Loading/Processing states in `TranscriptionScreen`).
-*   ⏳ Implement Transcription History View (Enhance `LibraryScreen` or new screen).
-*   ⏳ Refine UI Consistency Across Screens (Styles, Spacing, Borders).
-*   ⏳ Implement Player Seeking/Scrubbing functionality.
-*   ⏳ Add Skip Forward/Backward Buttons to player.
+*   ⏳ Improve Transcription UI Feedback (Loading/Processing states in `TranscriptionScreen` - Partially done, review needed).
+*   ✅ **Transcription History/Library:** Improve UI for sermon list on `HomeScreen`.
+    *   ✅ Refactor list rendering using `SectionList`.
+    *   ✅ Refine card styling to match target UI.
+*   ⏳ Refine UI Consistency Across Screens (Styles, Spacing, Borders - Ongoing).
+*   ✅ Replace Emoji Icons with Vector Icons (`@expo/vector-icons`).
 *   ⏳ Enhance Transcript Display (e.g., Speaker Labels if API provides, Highlighting).
-*   ⏳ Review and refine Home Screen UI (inspired by Otter.ai mocks).
+*   ⏳ Review and refine Home Screen UI (inspired by Otter.ai mocks - partially addressed by card styling).
+*   ⏳ Keyboard dismissal in Notes tab (paused).
 
 ---
 
 ## Technical Debt & Refactoring
 
-*   ⏳ Add Proper Typing (AssemblyAI responses, Component Props).
-*   ⏳ Improve Error Type Handling System-wide.
-*   ⏳ Add Comprehensive Logging (Consider Sentry).
-*   ⏳ Refactor `AsyncStorage` Logic (Consider Custom Hook or Service).
-*   ⏳ Refactor Audio Playback Logic (Consider Custom Hook).
-*   ⏳ Document Service Layer/API Interfaces.
-*   ⏳ Review and Optimize `expo-av` Recording Settings for Quality/Compatibility.
+*   ⏳ Typing (API responses, Props, Contexts).
+*   ⏳ Logging (Implement more structured logging, potentially integrate Sentry/Expo Error Reporter).
+*   ⏳ Refactor AsyncStorage access into dedicated utility/hook.
+*   ⏳ Optimize Recording Settings (review `expo-av` options).
+*   ⏳ Code Cleanup (remove unused code/comments, ensure consistency).
 
 ---
 
@@ -82,10 +86,8 @@ This document tracks completed and pending tasks for the project.
 
 ## Testing
 
-*   ⏳ Test Recording & Playback on Different Devices (iOS/Android).
-*   ⏳ Verify Audio Quality Across Devices.
-*   ⏳ Check Transcription Accuracy with Various Inputs.
-*   ⏳ Add Unit/Integration Tests (Jest, RTL, Detox).
+*   ⏳ Device Testing (iOS/Android, different screen sizes).
+*   ⏳ Unit/Integration Tests (Jest, React Native Testing Library, Detox).
 
 ---
 
@@ -98,3 +100,4 @@ This document tracks completed and pending tasks for the project.
 *   ⏳ Accessibility Enhancements (Screen reader, font scaling review).
 *   ⏳ UI Polishing & Animations (`react-native-reanimated`).
 *   ⏳ Add Speaker field/functionality.
+*   ⏳ **Transcription History/Library:** Improve how the list of saved sermons is displayed on the `HomeScreen`.

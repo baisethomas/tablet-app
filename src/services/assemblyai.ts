@@ -95,36 +95,61 @@ export async function submitBatchJob(audioUrl: string): Promise<string> {
   }
 }
 
-// Function to poll the status of a transcription job
+// Function to poll the status of a transcription job until completion or error
 export async function pollBatchJobStatus(jobId: string): Promise<TranscriptionResponse> {
   if (!API_KEY) throw new Error('AssemblyAI API Key not available.');
 
-  console.log('Polling status for job ID:', jobId);
-  try {
-    const response = await fetch(`${BASE_URL}/transcript/${jobId}`, {
-      headers: {
-        'Authorization': API_KEY,
-      },
-    });
+  const pollInterval = 5000; // Poll every 5 seconds
+  const maxAttempts = 60; // Max attempts (e.g., 5 minutes)
+  let attempt = 0;
 
-    const body: TranscriptionResponse = await response.json();
-    console.log('Poll response status:', response.status, 'Job status:', body.status);
+  while (attempt < maxAttempts) {
+    attempt++;
+    console.log(`Polling status for job ID: ${jobId} (Attempt ${attempt})`);
+    try {
+      const response = await fetch(`${BASE_URL}/transcript/${jobId}`, {
+        headers: {
+          'Authorization': API_KEY,
+        },
+      });
 
-    if (!response.ok) {
-      console.error('Poll job status failed body:', body);
-      // Even if response not ok, body might contain an error status from AssemblyAI
-      if (body.status === 'error') {
-          return body; // Return the error status object
+      const body: TranscriptionResponse = await response.json();
+      console.log('Poll response status:', response.status, 'Job status:', body.status);
+
+      if (!response.ok) {
+        console.error('Poll job status failed body:', body);
+        // Check if body contains final error status from AssemblyAI
+        if (body.status === 'error') {
+            console.warn(`Polling failed but received final error status: ${body.error}`);
+            return body; // Return the final error status object
+        }
+        // If not a final error status, treat as network/API error
+        throw new Error(`Failed to get transcription status: ${body.error || response.statusText}`);
       }
-      throw new Error(`Failed to get transcription status: ${body.error || response.statusText}`);
+
+      // Check if job is completed or failed
+      if (body.status === 'completed' || body.status === 'error') {
+        return body; // Return the final result (success or error)
+      }
+
+      // If still queued or processing, wait and poll again
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+    } catch (error: any) {
+      // Handle network errors during polling
+      console.error(`Error during polling attempt ${attempt}:`, error);
+      // Optional: Implement retry logic for transient network errors here
+      // If it's the last attempt, re-throw the error
+      if (attempt === maxAttempts) {
+         throw new Error(`Failed to get transcription status after ${maxAttempts} attempts: ${error.message}`);
+      }
+      // Wait before the next attempt even if there was an error
+      await new Promise(resolve => setTimeout(resolve, pollInterval)); 
     }
-
-    return body; // Return the full response object (includes status, text?, error?)
-
-  } catch (error) {
-    console.error('Error polling transcription status:', error);
-    throw error;
   }
+
+  // If loop finishes without completion/error, throw timeout error
+  throw new Error(`Transcription job timed out after ${maxAttempts * pollInterval / 1000} seconds.`);
 }
 
 // The old combined function (can be removed or kept for other uses)
