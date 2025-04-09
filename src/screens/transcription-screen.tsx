@@ -21,6 +21,7 @@ interface SavedSermon {
   date: string; 
   title?: string; 
   transcript: string; 
+  audioUrl?: string;
 }
 
 export function TranscriptionScreen() {
@@ -72,7 +73,8 @@ export function TranscriptionScreen() {
   };
 
   // Polling loop for checking job status
-  const pollJobLoop = (currentJobId: string) => {
+  // Accepts audioUriForSaving to avoid stale state in callback
+  const pollJobLoop = (currentJobId: string, audioUriForSaving: string) => {
     // Clear any existing interval
     if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
 
@@ -93,9 +95,13 @@ export function TranscriptionScreen() {
           setJobId(null);
           
           // Save the completed transcript right after completion
-          await saveTranscriptToStorage(completedTranscript);
+          // Pass the audio URI explicitly
+          await saveTranscriptToStorage(completedTranscript, audioUriForSaving);
 
-          await cleanupFullAudioFile(null);
+          // Delete temp file AFTER saving is done (or attempted)
+          // We no longer delete here because we want to keep it for playback
+          // await cleanupFullAudioFile(null); 
+
         } else if (result.status === 'error') {
           if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
           setErrorMessage(result.error || 'Transcription job failed.');
@@ -134,8 +140,8 @@ export function TranscriptionScreen() {
       console.log("Job submitted successfully. ID:", submittedJobId);
       setJobId(submittedJobId);
 
-      // Step 3: Start Polling
-      pollJobLoop(submittedJobId);
+      // Step 3: Start Polling, passing the audioUri needed for saving
+      pollJobLoop(submittedJobId, audioUri);
 
     } catch (error: any) {
       console.error("Batch Processing Error:", error);
@@ -147,8 +153,15 @@ export function TranscriptionScreen() {
   };
 
   // Function to save the transcript using AsyncStorage
-  const saveTranscriptToStorage = async (transcriptToSave: string) => {
+  // Now accepts audioUrlToSave as a parameter
+  const saveTranscriptToStorage = async (transcriptToSave: string, audioUrlToSave: string) => {
     if (!transcriptToSave) return; // Don't save empty transcripts
+    // Use the passed-in audioUrlToSave directly
+    if (!audioUrlToSave) {
+      console.error("Cannot save sermon, audio URL was not provided to save function.");
+      Alert.alert("Error", "Could not find the audio file to save.");
+      return;
+    }
 
     try {
       const sermonId = Date.now().toString();
@@ -157,7 +170,8 @@ export function TranscriptionScreen() {
         id: sermonId,
         date: sermonDate,
         transcript: transcriptToSave,
-        title: `Sermon - ${new Date(sermonDate).toLocaleDateString()}` // Example title
+        title: `Sermon - ${new Date(sermonDate).toLocaleDateString()}`, // Example title
+        audioUrl: audioUrlToSave, // Use the passed-in audio URI
       };
 
       const existingData = await AsyncStorage.getItem('savedSermons');
@@ -180,6 +194,9 @@ export function TranscriptionScreen() {
       await AsyncStorage.setItem('savedSermons', JSON.stringify(sermonsArray));
       console.log('Sermon saved successfully to AsyncStorage!');
       Alert.alert('Success', 'Transcription saved successfully.');
+      
+      // !! Important: Do NOT delete the audio file here anymore !!
+      // await cleanupFullAudioFile(null); // REMOVED
 
     } catch (error) {
       console.error('Failed to save transcription to AsyncStorage:', error);

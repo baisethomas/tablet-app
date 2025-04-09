@@ -29,8 +29,8 @@ export async function uploadAudioFile(fileUri: string): Promise<string> {
     const uploadResponse = await FileSystem.uploadAsync(`${BASE_URL}/upload`, fileUri, {
       headers: {
         'Authorization': API_KEY,
-        // Content-Type might be inferred or you can specify based on actual format
-        // 'Content-Type': 'audio/wav',
+        // Explicitly set Content-Type for WAV file
+        'Content-Type': 'audio/wav',
       },
       httpMethod: 'POST',
       uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT

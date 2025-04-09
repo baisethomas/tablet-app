@@ -4,4 +4,5 @@ export interface SavedSermon {
   title?: string; 
   transcript: string; 
   notes?: string;
+  audioUrl?: string;
 } 
