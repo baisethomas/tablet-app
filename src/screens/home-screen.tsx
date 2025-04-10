@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -9,7 +9,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   StatusBar,
-  Alert
+  Alert,
+  Platform
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,6 +23,8 @@ import { useThemeStyles } from '../hooks/useThemeStyles';
 import { createSampleSermonData, clearSermonData } from '../utils/dev-helpers';
 import { ErrorDisplay } from '../components/ui/ErrorDisplay';
 import { getAllSermons } from '../services/sermon-storage';
+import * as Notifications from 'expo-notifications';
+import { formatMillisToMMSS } from '../utils/formatters';
 
 // Define the structure for saved data
 interface SavedSermon {
@@ -31,6 +34,7 @@ interface SavedSermon {
   transcript: string; 
   processingStatus?: string;
   processingError?: string;
+  durationMillis?: number; // Make optional to match global type
 }
 
 // Rename interface for SectionList structure
@@ -95,20 +99,6 @@ function groupSermonsByDate(sermons: SavedSermon[]): SectionData[] {
   return sections;
 }
 
-// Helper to format duration
-function formatSermonDuration(transcript: string): string {
-  if (!transcript) return '0 secs';
-  const words = transcript.split(' ').length;
-  const totalSeconds = Math.max(1, Math.round(words / 150 * 60)); // Approx 150 wpm
-
-  if (totalSeconds < 60) {
-    return `${totalSeconds} secs`;
-  } else {
-    const minutes = Math.round(totalSeconds / 60);
-    return `${minutes} mins`;
-  }
-}
-
 export function HomeScreen() {
   const { colors, theme } = useTheme();
   const { fontWeight } = useThemeStyles();
@@ -117,6 +107,41 @@ export function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Request notification permissions on component mount
+  useEffect(() => {
+    async function registerForPushNotificationsAsync() {
+      let token;
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'default',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+        });
+      }
+
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        console.log('[HomeScreen] Requesting notification permissions...');
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== 'granted') {
+        console.log('[HomeScreen] Failed to get push token for push notification!');
+        // Optionally inform the user that notifications won't work
+        // Alert.alert('Notification Permission Denied', 'You will not receive updates on sermon processing.');
+        return;
+      }
+      console.log('[HomeScreen] Notification permissions granted.');
+      // You could get the ExpoPushToken here if needed for sending pushes later
+      // token = (await Notifications.getExpoPushTokenAsync()).data;
+      // console.log(token);
+    }
+
+    registerForPushNotificationsAsync();
+  }, []); // Empty dependency array ensures this runs once on mount
 
   // Define styles inside the component to access theme hooks
   const styles = StyleSheet.create({
@@ -342,12 +367,12 @@ export function HomeScreen() {
       hour12: true 
     });
     
-    // Format duration using helper
-    const duration = formatSermonDuration(item.transcript);
+    // Format duration using the new helper and stored durationMillis
+    const duration = formatMillisToMMSS(item.durationMillis);
     
     // Get preview text (first line, no bullet)
-    const previewText = item.transcript?.split('\n')[0] || 'No transcript available';
-    
+    const previewText = item.transcript?.split('\n')[0] || (item.processingStatus === 'completed' ? 'No transcript available' : ' ');
+
     const handleCardPress = () => {
       if (item.processingStatus === 'error') {
         Alert.alert(
@@ -372,7 +397,7 @@ export function HomeScreen() {
       <TouchableOpacity 
         style={cardStyle} 
         onPress={handleCardPress}
-        activeOpacity={item.processingStatus === 'processing' ? 1 : 0.7} // Prevent opacity change if processing
+        activeOpacity={item.processingStatus === 'processing' ? 1 : 0.7}
       >
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle} numberOfLines={1}>{item.title || 'Note'}</Text>

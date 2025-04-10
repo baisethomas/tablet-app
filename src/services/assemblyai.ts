@@ -12,12 +12,31 @@ if (!API_KEY) {
 }
 
 // Reusable interface for the transcription response object
+export interface Word {
+  text: string;
+  start: number;
+  end: number;
+  confidence: number;
+  speaker?: string | null; // If speaker_labels is enabled
+}
+
+export interface Paragraph {
+  text: string;
+  start: number;
+  end: number;
+  confidence: number;
+  words: Word[];
+  speaker?: string | null; // If speaker_labels is enabled
+}
+
 export interface TranscriptionResponse {
   id: string;
   status: 'queued' | 'processing' | 'completed' | 'error';
-  text?: string;
+  text?: string; // Full transcript text
   error?: string;
-  // Add other potential fields if needed based on AssemblyAI docs
+  paragraphs?: Paragraph[]; // Added for paragraph data
+  words?: Word[]; // Added for word-level data
+  // Add other potential fields if needed (e.g., utterance level data if speaker_labels enabled)
 }
 
 // Function to upload the audio file
@@ -62,6 +81,7 @@ export async function submitBatchJob(audioUrl: string): Promise<string> {
   
   console.log('Submitting job for audio URL:', audioUrl);
   try {
+    console.log(`[AssemblyAI] Submitting job with audio_url: ${audioUrl}`);
     const response = await fetch(`${BASE_URL}/transcript`, {
       method: 'POST',
       headers: {
@@ -70,8 +90,6 @@ export async function submitBatchJob(audioUrl: string): Promise<string> {
       },
       body: JSON.stringify({
         audio_url: audioUrl,
-        // Add other parameters as needed (language_code, speaker_labels etc.)
-        // language_code: 'en' 
       }),
     });
 
@@ -95,41 +113,68 @@ export async function submitBatchJob(audioUrl: string): Promise<string> {
   }
 }
 
-// Function to poll the status of a transcription job until completion or error
+// Define the response structure for the paragraphs endpoint
+interface ParagraphsResponse {
+    paragraphs: Paragraph[];
+    // May include other fields like id, confidence, audio_duration from the docs
+}
+
+// Function to poll the status and fetch paragraphs on completion
 export async function pollBatchJobStatus(jobId: string): Promise<TranscriptionResponse> {
   if (!API_KEY) throw new Error('AssemblyAI API Key not available.');
 
-  const pollInterval = 5000; // Poll every 5 seconds
-  const maxAttempts = 60; // Max attempts (e.g., 5 minutes)
+  const pollInterval = 5000;
+  const maxAttempts = 60;
   let attempt = 0;
 
   while (attempt < maxAttempts) {
     attempt++;
     console.log(`Polling status for job ID: ${jobId} (Attempt ${attempt})`);
     try {
-      const response = await fetch(`${BASE_URL}/transcript/${jobId}`, {
-        headers: {
-          'Authorization': API_KEY,
-        },
+      // 1. Poll the main transcript endpoint
+      const pollResponse = await fetch(`${BASE_URL}/transcript/${jobId}`, {
+        headers: { 'Authorization': API_KEY },
       });
+      const body: TranscriptionResponse = await pollResponse.json();
+      console.log('Poll response status:', pollResponse.status, 'Job status:', body.status);
 
-      const body: TranscriptionResponse = await response.json();
-      console.log('Poll response status:', response.status, 'Job status:', body.status);
-
-      if (!response.ok) {
-        console.error('Poll job status failed body:', body);
-        // Check if body contains final error status from AssemblyAI
-        if (body.status === 'error') {
-            console.warn(`Polling failed but received final error status: ${body.error}`);
-            return body; // Return the final error status object
-        }
-        // If not a final error status, treat as network/API error
-        throw new Error(`Failed to get transcription status: ${body.error || response.statusText}`);
+      if (!pollResponse.ok) {
+        if (body.status === 'error') return body; // Return final error status
+        throw new Error(`Failed to get transcription status: ${body.error || pollResponse.statusText}`);
       }
 
-      // Check if job is completed or failed
-      if (body.status === 'completed' || body.status === 'error') {
-        return body; // Return the final result (success or error)
+      // 2. Check status and fetch paragraphs if completed
+      if (body.status === 'completed') {
+        console.log(`Job ${jobId} completed. Fetching paragraphs...`);
+        try {
+          const paragraphsResponse = await fetch(`${BASE_URL}/transcript/${jobId}/paragraphs`, {
+            headers: { 'Authorization': API_KEY },
+          });
+          if (!paragraphsResponse.ok) {
+            const paraErrorBody = await paragraphsResponse.json().catch(() => ({})); // Catch JSON parse error
+            console.error('Failed to fetch paragraphs body:', paraErrorBody);
+            throw new Error(`Failed to fetch paragraphs: ${paraErrorBody.error || paragraphsResponse.statusText}`);
+          }
+          const paragraphsData: ParagraphsResponse = await paragraphsResponse.json();
+          
+          // Combine the original response body with the paragraphs
+          const finalResponse: TranscriptionResponse = {
+            ...body, // Includes id, status, text, words etc.
+            paragraphs: paragraphsData.paragraphs, // Add the paragraphs array
+          };
+          console.log(`Successfully fetched paragraphs for job ${jobId}.`);
+          return finalResponse;
+          
+        } catch (paraError: any) {
+          console.error(`Error fetching paragraphs for completed job ${jobId}:`, paraError);
+          // Return the original completed response but log the error fetching paragraphs
+          // Or potentially mark it as an error? For now, return completed without paragraphs.
+          return { ...body, error: `Completed, but failed to fetch paragraphs: ${paraError.message}` }; 
+        }
+      }
+      
+      if (body.status === 'error') {
+        return body; // Return final error status
       }
 
       // If still queued or processing, wait and poll again

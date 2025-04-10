@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   ActivityIndicator, 
   Alert,
-  StatusBar
+  StatusBar,
+  TouchableOpacity,
+  TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
@@ -21,6 +23,8 @@ import { TranscriptTab } from '../components/sermon-detail/TranscriptTab';
 import { NotesTab } from '../components/sermon-detail/NotesTab';
 import { ErrorDisplay } from '../components/ui/ErrorDisplay';
 import { getSermonById } from '../services/sermon-storage'; // Import storage service
+import { useSermons } from '../hooks/useSermons'; // Import the hook
+import { formatMillisToMMSS } from '../utils/formatters'; // Import the moved helper
 
 // Define the route prop type, including optional initialTab
 type SermonDetailScreenRouteProp = RouteProp<RootStackParamList & { SermonDetail: { initialTab?: keyof SermonDetailTabParamList } }, 'SermonDetail'>;
@@ -47,10 +51,16 @@ export function SermonDetailScreen() {
   const route = useRoute<SermonDetailScreenRouteProp>();
   const navigation = useNavigation();
   const { sermonId, initialTab } = route.params;
+  const { updateSermonTitle } = useSermons(); // Get the update function
 
   const [sermon, setSermon] = useState<SavedSermon | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // State for title editing
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editableTitle, setEditableTitle] = useState('');
+  const titleInputRef = useRef<TextInput>(null);
 
   // Load sermon data using the service
   useEffect(() => {
@@ -67,15 +77,16 @@ export function SermonDetailScreen() {
       
       try {
         console.log(`[SermonDetail] Loading sermon with ID: ${sermonId}`);
-        // Use the storage service function
         const foundSermon = await getSermonById(sermonId);
+        
+        console.log("[SermonDetail] Raw data loaded from storage:", JSON.stringify(foundSermon, null, 2));
 
         if (!foundSermon) {
           console.error(`[SermonDetail] Sermon with ID ${sermonId} not found.`);
           throw new Error(`Recording details could not be found.`); // User-friendly message
         }
 
-        console.log("[SermonDetail] Found sermon:", foundSermon.id);
+        console.log("[SermonDetail] Found sermon, setting state:", foundSermon.id);
         setSermon(foundSermon);
       } catch (e: any) {
         console.error('[SermonDetail] Failed to fetch sermon detail:', e);
@@ -88,6 +99,48 @@ export function SermonDetailScreen() {
     loadSermonDetail();
   }, [sermonId]);
 
+  // Set editable title when sermon loads or editing starts
+  useEffect(() => {
+    if (sermon) {
+      setEditableTitle(sermon.title || 'Sermon'); 
+    }
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+    }
+  }, [sermon, isEditingTitle]);
+
+  // Handle saving the title
+  const handleSaveTitle = async () => {
+    if (!sermon || editableTitle === sermon.title || !editableTitle.trim()) {
+      setIsEditingTitle(false); // Exit editing if no change or empty
+      if (sermon) setEditableTitle(sermon.title || 'Sermon'); // Reset editable title
+      return;
+    }
+    
+    try {
+      // Call the hook function to update the title
+      const updatedSermon = await updateSermonTitle(sermon.id, editableTitle.trim());
+      if (updatedSermon) {
+        setSermon(updatedSermon); // Update local state
+        console.log("Sermon title updated successfully");
+      } else {
+        Alert.alert("Error", "Could not save the title. Please try again.");
+        setEditableTitle(sermon.title || 'Sermon'); // Revert on error
+      }
+    } catch (e) {
+      console.error("Error saving title:", e);
+      Alert.alert("Error", "An unexpected error occurred while saving the title.");
+      setEditableTitle(sermon.title || 'Sermon'); // Revert on error
+    } finally {
+      setIsEditingTitle(false);
+    }
+  };
+  
+  const handleCancelEditTitle = () => {
+    setIsEditingTitle(false);
+    if (sermon) setEditableTitle(sermon.title || 'Sermon');
+  };
+
   // Use the correct prop name for NotesTab
   const handleNotesSaved = (updatedSermon: SavedSermon) => {
     console.log("Sermon notes updated in parent:", updatedSermon);
@@ -98,6 +151,8 @@ export function SermonDetailScreen() {
   const renderSermonMetadata = () => {
     if (!sermon) return null;
     
+    console.log(`[SermonDetail] Rendering metadata, sermon.durationMillis: ${sermon.durationMillis}`);
+
     // Format date: Mon, 4/7
     const sermonDate = new Date(sermon.date);
     const day = sermonDate.toLocaleDateString('en-US', { weekday: 'short' });
@@ -112,10 +167,8 @@ export function SermonDetailScreen() {
       hour12: true 
     });
     
-    // Calculate duration based on transcript length (approximate)
-    const words = sermon.transcript.split(' ').length;
-    const minutes = Math.max(3, Math.round(words / 150)); // Assume ~150 words per minute
-    const duration = `${minutes}:${Math.round(Math.random() * 59).toString().padStart(2, '0')}`;
+    // Calculate duration: Use stored durationMillis directly.
+    const formattedDuration = formatMillisToMMSS(sermon.durationMillis);
     
     const styles = StyleSheet.create({
       metadataContainer: {
@@ -141,6 +194,9 @@ export function SermonDetailScreen() {
       },
     });
     
+    // *** Log the final formatted duration string ***
+    console.log(`[SermonDetail] Final formattedDuration: ${formattedDuration}`);
+
     return (
       <View style={styles.metadataContainer}>
         <View style={styles.metadataItem}>
@@ -152,7 +208,7 @@ export function SermonDetailScreen() {
         </View>
         <View style={styles.metadataItem}>
           <Ionicons name="timer-outline" size={16} color={colors.text.tertiary} />
-          <Text style={styles.metadataText}>{duration}</Text>
+          <Text style={styles.metadataText}>{formattedDuration}</Text>
         </View>
         <View style={styles.metadataItem}>
           <Ionicons name="person-outline" size={16} color={colors.text.tertiary} />
@@ -185,13 +241,37 @@ export function SermonDetailScreen() {
       textAlign: 'center',
       color: colors.ui.error,
     },
+    titleContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: theme.spacing.md,
+      paddingTop: theme.spacing.sm,
+      backgroundColor: colors.background.primary,
+      minHeight: 50,
+    },
     titleText: {
       fontSize: theme.fontSizes.heading,
       fontWeight: fontWeight('bold'),
       color: colors.text.primary,
-      paddingHorizontal: theme.spacing.md,
-      paddingBottom: theme.spacing.sm,
-      backgroundColor: colors.background.primary,
+      flex: 1,
+      marginRight: theme.spacing.sm,
+      lineHeight: theme.fontSizes.heading * 1.2,
+      paddingVertical: theme.spacing.xs,
+    },
+    editIcon: {
+      padding: theme.spacing.xs,
+      alignSelf: 'center',
+    },
+    titleInput: {
+      fontSize: theme.fontSizes.heading,
+      fontWeight: fontWeight('bold'),
+      color: colors.text.primary,
+      flex: 1,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.primary, 
+      marginRight: theme.spacing.sm,
+      paddingVertical: theme.spacing.xs,
+      alignSelf: 'stretch',
     },
     tabBar: {
       backgroundColor: colors.background.primary,
@@ -233,21 +313,40 @@ export function SermonDetailScreen() {
     );
   }
 
-  // Create a dummy sermon with guaranteed values for development
-  if (__DEV__ && (!sermon.transcript || !sermon.transcript.trim())) {
-    sermon.transcript = "This is a development placeholder transcript. In a real sermon, this would contain the transcribed content of the sermon.";
-  }
-  
-  if (__DEV__ && (!sermon.notes || !sermon.notes.trim())) {
-    sermon.notes = "Here is a note. Updating the saved note";
-  }
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle={colors.text.primary === '#F5F5F5' ? 'light-content' : 'dark-content'} />
-      <Text style={styles.titleText}>
-        {sermon.title || 'Sermon'}
-      </Text>
+      
+      {/* Title Section - Conditional Rendering */}
+      <View style={styles.titleContainer}>
+        {isEditingTitle ? (
+          <>
+            <TextInput
+              ref={titleInputRef}
+              style={styles.titleInput}
+              value={editableTitle}
+              onChangeText={setEditableTitle}
+              onBlur={handleSaveTitle}
+              onSubmitEditing={handleSaveTitle}
+              returnKeyType="done"
+              selectTextOnFocus
+            />
+            <TouchableOpacity onPress={handleCancelEditTitle} style={styles.editIcon}>
+              <Ionicons name="close-circle-outline" size={24} color={colors.text.secondary} />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.titleText} numberOfLines={1} ellipsizeMode="tail">
+              {sermon?.title || 'Sermon'}
+            </Text>
+            <TouchableOpacity onPress={() => setIsEditingTitle(true)} style={styles.editIcon}>
+              <Ionicons name="pencil-outline" size={20} color={colors.text.secondary} />
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
       {renderSermonMetadata()}
       
       {/* Tab Navigation - Pass initialRouteName */}

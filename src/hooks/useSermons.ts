@@ -1,6 +1,13 @@
 import { useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SavedSermon } from '../types/sermon';
+import {
+  getAllSermons,
+  addSermon as storageAddSermon,
+  getSermonById as storageGetSermonById,
+  updateSermon as storageUpdateSermon,
+  deleteSermon as storageDeleteSermon,
+} from '../services/sermon-storage';
 
 /**
  * Custom hook for sermon data operations
@@ -10,47 +17,13 @@ export function useSermons() {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Updates notes for a specific sermon and saves to AsyncStorage
+   * Updates notes for a specific sermon.
    */
   const updateSermonNotes = useCallback(async (sermonId: string, notes: string): Promise<SavedSermon | null> => {
     setIsLoading(true);
     setError(null);
-    
     try {
-      // Get all sermons from storage
-      const existingData = await AsyncStorage.getItem('savedSermons');
-      if (existingData === null) {
-        throw new Error('No saved sermons found.');
-      }
-      
-      let sermonsArray: SavedSermon[] = [];
-      try {
-        sermonsArray = JSON.parse(existingData);
-        if (!Array.isArray(sermonsArray)) {
-          throw new Error('Saved sermons data is not an array.');
-        }
-      } catch (parseError) {
-        console.error('Error parsing saved sermons:', parseError);
-        throw new Error('Could not parse sermon data.');
-      }
-      
-      // Find and update the target sermon
-      const sermonIndex = sermonsArray.findIndex(sermon => sermon.id === sermonId);
-      if (sermonIndex === -1) {
-        throw new Error(`Sermon with ID ${sermonId} not found.`);
-      }
-      
-      // Update the notes
-      const updatedSermon = {
-        ...sermonsArray[sermonIndex],
-        notes
-      };
-      
-      sermonsArray[sermonIndex] = updatedSermon;
-      
-      // Save back to storage
-      await AsyncStorage.setItem('savedSermons', JSON.stringify(sermonsArray));
-      
+      const updatedSermon = await storageUpdateSermon(sermonId, { notes });
       console.log(`Updated notes for sermon ${sermonId}`);
       return updatedSermon;
     } catch (e: any) {
@@ -63,29 +36,33 @@ export function useSermons() {
   }, []);
 
   /**
-   * Loads all saved sermons from AsyncStorage
+   * Updates the title for a specific sermon.
+   */
+  const updateSermonTitle = useCallback(async (sermonId: string, title: string): Promise<SavedSermon | null> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const updatedSermon = await storageUpdateSermon(sermonId, { title });
+      console.log(`Updated title for sermon ${sermonId}`);
+      return updatedSermon;
+    } catch (e: any) {
+      console.error('Failed to update sermon title:', e);
+      setError(e.message || 'Failed to update sermon title.');
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  /**
+   * Loads all saved sermons from storage.
    */
   const getSermons = useCallback(async (): Promise<SavedSermon[]> => {
     setIsLoading(true);
     setError(null);
-    
     try {
-      const existingData = await AsyncStorage.getItem('savedSermons');
-      if (existingData === null) {
-        return [];
-      }
-      
-      try {
-        const sermonsArray = JSON.parse(existingData);
-        if (!Array.isArray(sermonsArray)) {
-          console.warn('Saved sermons data is not an array, returning empty array.');
-          return [];
-        }
-        return sermonsArray;
-      } catch (parseError) {
-        console.error('Error parsing saved sermons:', parseError);
-        throw new Error('Could not parse sermon data.');
-      }
+      const sermons = await getAllSermons();
+      return sermons;
     } catch (e: any) {
       console.error('Failed to fetch sermons:', e);
       setError(e.message || 'Failed to load sermons.');
@@ -99,6 +76,7 @@ export function useSermons() {
     isLoading,
     error,
     updateSermonNotes,
+    updateSermonTitle,
     getSermons
   };
 } 

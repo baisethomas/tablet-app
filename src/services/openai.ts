@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 
 // Define the expected structure of the summary
 export interface StructuredSummary {
+  sermonType: "Sunday Sermon" | "Bible Study" | "Youth Service" | "Other";
   overview: string;
   scriptures: string[];
   keyPoints: string[];
@@ -36,15 +37,28 @@ export async function generateSermonSummary(
     throw new Error('Cannot summarize an empty transcript.');
   }
 
-  const systemPrompt = `You are an AI assistant tasked with summarizing sermon transcripts. Analyze the provided transcript and generate a structured summary. The summary must have three sections: "Overview" (string), "Scriptures" (array of strings, use full references like "John 3:16"), and "Key points" (array of strings).
+  const systemPrompt = `You are a discerning and spiritually sensitive assistant summarizing a live sermon. First, determine the type of sermon based on tone, structure, and delivery cues. Then provide a warm, theologically grounded summary of the message. Focus on what was actually said—do not infer or fabricate meaning.
 
-Instructions:
-1.  **Overview:** Write a concise, single-paragraph summary of the sermon's main message and theme.
-2.  **Scriptures:** List the primary scripture references mentioned (e.g., "John 3:16", "Romans 8:28"). If no specific references are mentioned, the array should be empty ([]).
-3.  **Key points:** Identify and list the main points, arguments, or takeaways from the sermon as a bulleted list (aim for 3-5 points).
+STEP 1: Sermon Type Detection
+Classify the sermon into one of the following categories based on tone, style, and structure:
+- "Sunday Sermon": Typically delivered in a main worship service, inspirational or exhortational in tone.
+- "Bible Study": Slower-paced, teaching style, more scripture exposition, often interactive or detailed.
+- "Youth Service": More casual tone, modern language, culturally aware references, simplified theological language.
+- "Other"
 
-Respond ONLY with a valid JSON object adhering exactly to this format (do not include markdown formatting like \`\`\`json):
+STEP 2: Summary Content
+1. **Overview**: Write a warm, 3–5 sentence overview of the sermon's main message. Reflect the style of delivery. Be concise, thoughtful, and grounded in what was actually preached.
+2. **Scriptures**: List only the scripture references clearly mentioned in the sermon (e.g., "John 3:16"). If none, return an empty array.
+3. **Key Points**: List 3–5 major takeaways or core ideas that the preacher emphasized. Avoid assumptions or added interpretations.
+
+IMPORTANT:
+- DO NOT fabricate scripture or ideas that weren't said.
+- Keep tone spiritually grounded, insightful, and reflective of the speaker's delivery.
+
+Return a single JSON object in the following format. DO NOT include markdown or commentary.
+
 {
+  "sermonType": "Sunday Sermon" | "Bible Study" | "Youth Service" | "Other",
   "overview": "...",
   "scriptures": ["...", "..."],
   "keyPoints": ["...", "..."]
@@ -72,19 +86,22 @@ Respond ONLY with a valid JSON object adhering exactly to this format (do not in
     }
 
     try {
-      const parsedSummary: StructuredSummary = JSON.parse(content);
-      // Basic validation
+      const parsedSummary = JSON.parse(content) as Partial<StructuredSummary>;
+      const allowedSermonTypes = ["Sunday Sermon", "Bible Study", "Youth Service", "Other"];
+      
       if (
+        typeof parsedSummary.sermonType === 'string' &&
+        allowedSermonTypes.includes(parsedSummary.sermonType) &&
         typeof parsedSummary.overview === 'string' &&
         Array.isArray(parsedSummary.scriptures) &&
-        parsedSummary.scriptures.every(s => typeof s === 'string') && // Check array elements
+        parsedSummary.scriptures.every(s => typeof s === 'string') &&
         Array.isArray(parsedSummary.keyPoints) &&
-        parsedSummary.keyPoints.every(p => typeof p === 'string') // Check array elements
+        parsedSummary.keyPoints.every(p => typeof p === 'string') 
       ) {
         console.log('[openai.ts] Successfully parsed summary.');
-        return parsedSummary;
+        return parsedSummary as StructuredSummary;
       } else {
-        console.error('[openai.ts] OpenAI response JSON did not match expected structure:', parsedSummary);
+        console.error('[openai.ts] OpenAI response JSON did not match expected structure or had invalid sermonType:', parsedSummary);
         throw new Error('Invalid summary format received from AI.');
       }
     } catch (parseError) {
@@ -95,7 +112,6 @@ Respond ONLY with a valid JSON object adhering exactly to this format (do not in
   } catch (error: any) {
     console.error('[openai.ts] Error calling OpenAI API:', error);
     const message = error.response?.data?.error?.message || error.message || 'An unknown error occurred during summarization.';
-    // Re-throw the specific error message
     throw new Error(message);
   }
 }

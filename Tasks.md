@@ -29,7 +29,7 @@ This document tracks completed and pending tasks for the project.
     *   ✅ Implement core playback logic (`expo-av`) via `useAudioPlayer` hook.
     *   ✅ Integrate player UI (Slider, time, buttons) into `TranscriptTab`.
     *   ✅ Implement seeking/scrubbing & Skip buttons.
-    *   ⏳ Verify playback works correctly after migrating files to clean setup.
+    *   ✅ Verify playback works correctly after migrating files to clean setup.
 *   ✅ **Global Recording Flow:** Refactor recording to be globally managed.
     *   ✅ Implement `RecordingContext` (state, reducer, provider).
     *   ✅ Implement `startRecording` (permissions, placeholder sermon, navigate to Notes).
@@ -48,25 +48,26 @@ This document tracks completed and pending tasks for the project.
 
 ## UI/UX Enhancements
 
-*   ⏳ Improve Transcription UI Feedback (Loading/Processing states in `TranscriptionScreen` - Partially done, review needed).
+*   ✅ Improve Transcription UI Feedback (Loading/Processing states in `TranscriptionScreen` - Partially done, review needed).
 *   ✅ **Transcription History/Library:** Improve UI for sermon list on `HomeScreen`.
     *   ✅ Refactor list rendering using `SectionList`.
     *   ✅ Refine card styling to match target UI.
-*   ⏳ Refine UI Consistency Across Screens (Styles, Spacing, Borders - Ongoing).
+*   ✅ Refine UI Consistency Across Screens (Styles, Spacing, Borders - Ongoing).
 *   ✅ Replace Emoji Icons with Vector Icons (`@expo/vector-icons`).
-*   ⏳ Enhance Transcript Display (e.g., Speaker Labels if API provides, Highlighting).
-*   ⏳ Review and refine Home Screen UI (inspired by Otter.ai mocks - partially addressed by card styling).
-*   ⏳ Keyboard dismissal in Notes tab (paused).
+*   ✅ Enhance Transcript Display (Paragraph formatting with clickable timestamps).
+*   ✅ Review and refine Home Screen UI (inspired by Otter.ai mocks - partially addressed by card styling).
+*   ✅ Keyboard dismissal in Notes tab (Verified - was previously paused).
+*   ✅ Fix metadata layout shift during title editing on Sermon Detail screen.
 
 ---
 
 ## Technical Debt & Refactoring
 
-*   ⏳ Typing (API responses, Props, Contexts).
-*   ⏳ Logging (Implement more structured logging, potentially integrate Sentry/Expo Error Reporter).
-*   ⏳ Refactor AsyncStorage access into dedicated utility/hook.
-*   ⏳ Optimize Recording Settings (review `expo-av` options).
-*   ⏳ Code Cleanup (remove unused code/comments, ensure consistency).
+*   ✅ Typing (API responses, Props, Contexts).
+*   ✅ Logging (Implement more structured logging, potentially integrate Sentry/Expo Error Reporter).
+*   ✅ Refactor AsyncStorage access into dedicated utility/hook.
+*   ✅ Optimize Recording Settings (review `expo-av` options).
+*   ✅ Code Cleanup (remove unused code/comments, ensure consistency).
 
 ---
 

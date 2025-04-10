@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,6 +6,8 @@ import { useThemeStyles } from '../../hooks/useThemeStyles';
 import { SavedSermon } from '../../types/sermon';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer';
 import { ErrorDisplay } from '../ui/ErrorDisplay';
+import { formatMillisToMMSS } from '../../utils/formatters';
+import { Paragraph } from '../../services/assemblyai';
 
 interface TranscriptTabProps {
   sermon?: SavedSermon; 
@@ -38,6 +40,57 @@ export function TranscriptTab({ sermon }: TranscriptTabProps) {
       setSliderValue(positionMillis / durationMillis);
     }
   }, [positionMillis, durationMillis, isSeeking]);
+
+  // --- Click Handler for Paragraphs ---
+  const handleParagraphPress = useCallback((startTimeMillis: number) => {
+    if (durationMillis > 0) {
+        const seekPositionRatio = startTimeMillis / durationMillis;
+        seek(seekPositionRatio); // Call seek from the audio hook
+        // Optionally force playback to start if paused?
+        // if (!isPlaying) { togglePlayback(); } 
+    } 
+  }, [seek, durationMillis]);
+
+  // --- Render Transcript Content ---
+  const renderTranscript = () => {
+    // Check if processing failed or is ongoing
+    if (sermon?.processingStatus === 'error') {
+        return <Text style={styles.transcriptText}>Error during processing: {sermon.processingError || 'Unknown error'}</Text>;
+    }
+    if (sermon?.processingStatus === 'processing') {
+        return <Text style={styles.transcriptText}>Transcript processing...</Text>;
+    }
+    
+    // Check for structured transcript data
+    const paragraphs = sermon?.transcriptData?.paragraphs;
+    if (paragraphs && Array.isArray(paragraphs) && paragraphs.length > 0) {
+      return paragraphs.map((para, index) => (
+        <TouchableOpacity 
+          key={index} 
+          onPress={() => handleParagraphPress(para.start)} 
+          activeOpacity={0.7}
+          style={styles.paragraphContainer}
+        >
+          <Text style={styles.timestampText}>
+            [{formatMillisToMMSS(para.start)}]
+          </Text>
+          <Text style={styles.paragraphText}>
+            {/* Add speaker label if available: {para.speaker ? `Speaker ${para.speaker}: ` : ''} */}
+            {para.text}
+          </Text>
+        </TouchableOpacity>
+      ));
+    }
+
+    // Fallback to plain transcript text if no structured data
+    const plainTranscript = sermon?.transcript;
+    if (plainTranscript) {
+        return <Text style={styles.transcriptText}>{plainTranscript}</Text>;
+    }
+    
+    // Default message if no transcript at all
+    return <Text style={styles.transcriptText}>No transcript available.</Text>;
+  };
 
   // --- Render Player UI --- 
   const renderPlayer = () => {
@@ -126,12 +179,13 @@ export function TranscriptTab({ sermon }: TranscriptTabProps) {
     },
     transcriptContainer: {
       flex: 1,
-      padding: theme.spacing.md,
+      paddingHorizontal: theme.spacing.md,
     },
     transcriptText: {
       fontSize: theme.fontSizes.body,
-      lineHeight: theme.lineHeights.body * 1.4, // Increase line height for readability
+      lineHeight: theme.lineHeights.body * 1.4,
       color: colors.text.primary,
+      paddingVertical: theme.spacing.md,
     },
     playerContainer: {
       flexDirection: 'row',
@@ -150,7 +204,7 @@ export function TranscriptTab({ sermon }: TranscriptTabProps) {
     },
     playerTimeText: {
       fontSize: theme.fontSizes.caption,
-      minWidth: 45, // Ensure space for MM:SS
+      minWidth: 45,
       textAlign: 'center',
       marginHorizontal: theme.spacing.xs,
     },
@@ -159,7 +213,7 @@ export function TranscriptTab({ sermon }: TranscriptTabProps) {
       height: 40,
     },
     centeredInfo: {
-        flex: 1, // Takes up transcript space when shown
+        flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
         padding: theme.spacing.lg,
@@ -169,15 +223,30 @@ export function TranscriptTab({ sermon }: TranscriptTabProps) {
         fontSize: theme.fontSizes.body,
         color: colors.text.secondary,
     },
+    paragraphContainer: {
+      flexDirection: 'row',
+      marginBottom: theme.spacing.md,
+      paddingVertical: theme.spacing.xs,
+    },
+    timestampText: {
+      fontSize: theme.fontSizes.caption,
+      color: colors.text.secondary,
+      marginRight: theme.spacing.sm,
+      lineHeight: theme.lineHeights.body * 1.4,
+    },
+    paragraphText: {
+      flex: 1,
+      fontSize: theme.fontSizes.body,
+      lineHeight: theme.lineHeights.body * 1.4, 
+      color: colors.text.primary,
+    },
   });
 
   // --- Main Render ---
   return (
     <View style={styles.container}>
       <ScrollView style={styles.transcriptContainer}>
-        <Text style={styles.transcriptText}>
-          {sermon?.transcript || 'No transcript available.'}
-        </Text>
+        {renderTranscript()} 
       </ScrollView>
       {renderPlayer()}
     </View>

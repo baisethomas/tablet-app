@@ -1,14 +1,21 @@
 import React, { createContext, useContext, useReducer, ReactNode, Dispatch, useCallback, useRef } from 'react';
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
+import * as Notifications from 'expo-notifications';
 import { SavedSermon } from '../types/sermon';
-import { uploadAudioFile, submitBatchJob, pollBatchJobStatus } from '../services/assemblyai';
-import { generateSermonSummary, StructuredSummary } from '../services/openai';
 import { 
     addSermon, 
     updateSermon, 
-    getSermonById // Import relevant storage functions
+    getSermonById
 } from '../services/sermon-storage'; 
+import { 
+    uploadAudioFile, 
+    submitBatchJob, 
+    pollBatchJobStatus, 
+    TranscriptionResponse
+} from '../services/assemblyai';
+import { generateSermonSummary } from '../services/openai';
 
 // --- State Definition ---
 interface RecordingState {
@@ -129,7 +136,6 @@ interface RecordingProviderProps {
 
 export function RecordingProvider({ children }: RecordingProviderProps) {
   const [state, dispatch] = useReducer(recordingReducer, initialState);
-  // Ref to hold the recording instance, prevents needing it in useCallback deps
   const recordingRef = useRef<Audio.Recording | null>(null);
 
   // --- Recording Status Update Handler ---
@@ -242,54 +248,100 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
     }
   }, [onRecordingStatusUpdate]);
 
-  // Pause/Resume might be tricky/platform-dependent with expo-av recording, 
-  // keeping simple state updates for now.
+  // Pause/Resume might be tricky/platform-dependent with expo-av recording,
+  // keeping simple state updates for now. // NOW IMPLEMENTING ACTUAL PAUSE/RESUME
   const pauseRecording = useCallback(async () => {
     if (!state.isRecording || state.isPaused || !recordingRef.current) return;
-    console.log('[RecordingContext] Pausing recording (state only)...');
-    // Consider if `recordingRef.current.pauseAsync()` is reliable
-    dispatch({ type: 'PAUSE_RECORDING' });
+    console.log('[RecordingContext] Attempting to pause recording...');
+    try {
+      await recordingRef.current.pauseAsync();
+      console.log('[RecordingContext] Recording paused successfully.');
+      dispatch({ type: 'PAUSE_RECORDING' });
+    } catch (error: any) {
+      console.error('[RecordingContext] Failed to pause recording:', error);
+      // Optionally dispatch an error action or update state.error
+      dispatch({ type: 'RECORDING_ERROR', payload: `Failed to pause: ${error.message || 'Unknown error'}` });
+    }
   }, [state.isRecording, state.isPaused]);
 
   const resumeRecording = useCallback(async () => {
     if (!state.isRecording || !state.isPaused || !recordingRef.current) return;
-    console.log('[RecordingContext] Resuming recording (state only)...');
-    // Consider if `recordingRef.current.startAsync()` resumes
-    dispatch({ type: 'RESUME_RECORDING' });
+    console.log('[RecordingContext] Attempting to resume recording...');
+    try {
+      await recordingRef.current.startAsync(); // startAsync is used for resuming
+      console.log('[RecordingContext] Recording resumed successfully.');
+      dispatch({ type: 'RESUME_RECORDING' });
+    } catch (error: any) {
+      console.error('[RecordingContext] Failed to resume recording:', error);
+      // Optionally dispatch an error action or update state.error
+      dispatch({ type: 'RECORDING_ERROR', payload: `Failed to resume: ${error.message || 'Unknown error'}` });
+    }
   }, [state.isRecording, state.isPaused]);
 
   const stopRecordingAndProcess = useCallback(async () => {
     if (!state.isRecording || !recordingRef.current) return;
     console.log('[RecordingContext] Stopping recording...');
-    const recordingInstanceToStop = recordingRef.current; // Capture instance
+    const recordingInstanceToStop = recordingRef.current; 
     const sermonIdToProcess = state.activeSermonId;
-    recordingRef.current = null; // Clear ref immediately
+    const finalDurationMillis = state.recordingDurationMillis; // Capture duration before state changes
+    recordingRef.current = null; 
     
+    let audioUri: string | null = null;
     try {
+      // Stop and get URI
       await recordingInstanceToStop.stopAndUnloadAsync();
-      const uri = recordingInstanceToStop.getURI();
-      console.log(`[RecordingContext] Recording stopped. URI: ${uri}`);
-      if (!uri) {
+      audioUri = recordingInstanceToStop.getURI();
+      console.log(`[RecordingContext] Recording stopped. URI: ${audioUri}, Duration: ${finalDurationMillis}ms`); // Log duration
+      if (!audioUri) {
         throw new Error('Failed to get recording URI after stopping.');
       }
       if (!sermonIdToProcess) {
         throw new Error('Cannot process recording without an active sermon ID.');
       }
       
-      // Dispatch immediately to update UI state (stop showing duration etc.)
-      dispatch({ type: 'STOP_RECORDING', payload: { uri } }); 
-      dispatch({ type: 'START_PROCESSING' });
+      // Dispatch STOP_RECORDING first
+      dispatch({ type: 'STOP_RECORDING', payload: { uri: audioUri } }); 
+      
+      // ---- Update Status and Start Background Processing ----
+      try {
+        console.log(`[RecordingContext] Updating sermon ${sermonIdToProcess} status to 'processing'...`);
+        // Log the duration value just before saving
+        console.log(`[RecordingContext] Saving durationMillis: ${finalDurationMillis}`); 
+        await updateSermon(sermonIdToProcess, { 
+            processingStatus: 'processing', 
+            audioUrl: audioUri, // Save local URI
+            durationMillis: finalDurationMillis // Save captured duration
+        });
 
-      // --- Start Background Processing (Do NOT await these here) ---
-      console.log(`[RecordingContext] Starting background processing for sermon: ${sermonIdToProcess}`);
-      processRecordingInBackground(uri, sermonIdToProcess, dispatch);
+        // Dispatch START_PROCESSING for UI update
+        dispatch({ type: 'START_PROCESSING' });
+        
+        // Call the background processing function (defined below) - DO NOT AWAIT
+        console.log(`[RecordingContext] Starting background processing function for sermon: ${sermonIdToProcess}`);
+        processRecordingInBackground(audioUri, sermonIdToProcess, dispatch);
+        
+      } catch (updateError: any) {
+        // Handle errors during the initial status update
+        console.error(`[RecordingContext] Failed to update status to 'processing' for sermon ${sermonIdToProcess}:`, updateError);
+        dispatch({ type: 'FINISH_PROCESSING', payload: { error: `Failed to start processing: ${updateError.message}` } }); 
+      }
+      // ---- End Background Processing Start ----
 
-    } catch (err: any) {
-      console.error('[RecordingContext] Failed to stop recording:', err);
-      dispatch({ type: 'RECORDING_ERROR', payload: err.message || 'Failed to stop recording.' });
-      dispatch({ type: 'FINISH_PROCESSING', payload: { error: err.message } }); // Indicate processing failed
+    } catch (stopError: any) {
+      // Handle errors during stopAndUnloadAsync or getURI
+      console.error('[RecordingContext] Failed to stop recording or get URI:', stopError);
+      dispatch({ type: 'RECORDING_ERROR', payload: stopError.message || 'Failed to stop recording.' });
+      // Attempt to update status to error if we have an ID
+      if (sermonIdToProcess) {
+         updateSermon(sermonIdToProcess, { 
+            processingStatus: 'error', 
+            processingError: `Failed during recording stop: ${stopError.message}`,
+            durationMillis: finalDurationMillis // Still save duration even on stop error?
+         }).catch(e => console.error("CRITICAL: Failed to update sermon status to error after stop failure:", e));
+      }
+      dispatch({ type: 'FINISH_PROCESSING', payload: { error: stopError.message || 'Failed to stop recording.' } }); 
     }
-  }, [state.isRecording, state.activeSermonId]);
+  }, [state.isRecording, state.activeSermonId, state.recordingDurationMillis]); // Add duration to dependency array
 
   const value = {
     ...state,
@@ -313,77 +365,125 @@ async function processRecordingInBackground(
   sermonId: string,
   dispatch: Dispatch<Action> 
 ) {
-  let finalError: string | null = null;
-  try {
-    // Mark as processing using the service
-    console.log(`[BackgroundProcess] Marking sermon ${sermonId} as processing...`);
-    await updateSermon(sermonId, { processingStatus: 'processing' }); // ID first
+  console.log(`[processRecordingInBackground] Starting for sermon: ${sermonId}`);
+  let finalStatus: SavedSermon['processingStatus'] = 'error';
+  let finalError: string | undefined = 'Unknown processing error occurred.';
+  let summaryResult: SavedSermon['summary'] = undefined;
+  let transcriptResult: string = '';
+  let sermonTitle = `Recording ${sermonId.substring(sermonId.length - 5)}`;
+  let transcriptResponse: TranscriptionResponse | null = null; // Store full response
 
-    // 1. Upload
-    console.log(`[BackgroundProcess] Uploading: ${audioUri}`);
+  // Try to get actual sermon title for better notifications
+  try {
+      const sermon = await getSermonById(sermonId);
+      if (sermon?.title) {
+          sermonTitle = sermon.title;
+      }
+  } catch (e) {
+      console.warn(`[processRecordingInBackground] Could not fetch sermon title for notification: ${e}`);
+  }
+
+  // Schedule initial processing notification
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Processing Sermon",
+        body: `Processing "${sermonTitle}"...`,
+      },
+      trigger: null, // Send immediately
+    });
+  } catch (e) {
+      console.warn(`[processRecordingInBackground] Failed to schedule initial notification: ${e}`);
+  }
+
+  try {
+    // 1. Upload Audio
+    console.log(`[processRecordingInBackground] Uploading audio...`);
     const uploadUrl = await uploadAudioFile(audioUri);
-    if (!uploadUrl) throw new Error("Upload failed, no URL.");
-    console.log(`[BackgroundProcess] Uploaded. URL: ${uploadUrl}`);
+    if (!uploadUrl) throw new Error("Audio upload failed, no URL returned.");
+    console.log(`[processRecordingInBackground] Upload successful: ${uploadUrl}`);
 
     // 2. Submit Transcription Job
-    console.log(`[BackgroundProcess] Submitting job...`);
+    console.log(`[processRecordingInBackground] Submitting transcription job...`);
     const jobId = await submitBatchJob(uploadUrl);
-    if (!jobId) throw new Error("Job submission failed, no ID.");
-    console.log(`[BackgroundProcess] Job Submitted. ID: ${jobId}`);
+    if (!jobId) throw new Error("Transcription job submission failed, no ID returned.");
+    console.log(`[processRecordingInBackground] Job submitted: ${jobId}`);
 
     // 3. Poll for Transcription Result
-    console.log(`[BackgroundProcess] Polling job status...`);
-    const transcriptResult = await pollBatchJobStatus(jobId); // Assumes this polls until done/error
-    if (transcriptResult.status !== 'completed' || !transcriptResult.text) {
-      throw new Error(transcriptResult.error || 'Transcription failed or produced no text.');
+    console.log(`[processRecordingInBackground] Polling for transcription results...`);
+    transcriptResponse = await pollBatchJobStatus(jobId); // Get full response
+    if (transcriptResponse.status !== 'completed' || !transcriptResponse.text) {
+      throw new Error(transcriptResponse.error || 'Transcription polling failed or returned no text.');
     }
-    const transcript = transcriptResult.text;
-    console.log(`[BackgroundProcess] Transcription complete.`);
+    transcriptResult = transcriptResponse.text; // Keep plain text for summary
+    console.log(`[processRecordingInBackground] Transcription complete. Received paragraphs: ${!!transcriptResponse.paragraphs}, words: ${!!transcriptResponse.words}`);
 
-    // 4. Generate Summary
-    console.log(`[BackgroundProcess] Generating summary...`);
-    const summary = await generateSermonSummary(transcript);
-    console.log(`[BackgroundProcess] Summary generated.`);
-
-    // 5. Update Sermon using the service
-    console.log(`[BackgroundProcess] Updating sermon record: ${sermonId} with results...`);
-    await updateSermon(
-      sermonId, // ID first
-      {
-        transcript: transcript,
-        audioUrl: audioUri, 
-        summary: summary || undefined,
-        processingStatus: 'completed',
-        processingError: undefined, 
-      }
-    ); 
-    console.log(`[BackgroundProcess] Sermon record updated successfully via service.`);
-
-  } catch (error: any) {
-    console.error('[BackgroundProcess] Error:', error);
-    finalError = error.message || 'Background processing failed.';
-    // Update storage with error status using the service
+    // 4. Generate Summary (using plain text)
     try {
-      await updateSermon(
-        sermonId, // ID first
-        { 
-          processingStatus: 'error', 
-          processingError: finalError ?? undefined // Also apply nullish coalescing here
-        } 
-      );
-    } catch (updateError) {
-      console.error(`[BackgroundProcess] CRITICAL: Failed to update sermon ${sermonId} with error status:`, updateError);
+        console.log(`[processRecordingInBackground] Generating summary...`);
+        summaryResult = await generateSermonSummary(transcriptResult);
+        console.log(`[processRecordingInBackground] Summary generated.`);
+    } catch (summaryError: any) {
+        console.warn(`[processRecordingInBackground] Failed to generate summary:`, summaryError.message);
     }
+
+    // Success
+    finalStatus = 'completed';
+    finalError = undefined;
+    console.log(`[processRecordingInBackground] Processing successful for sermon ${sermonId}.`);
+
+  } catch (err: any) {
+    console.error(`[processRecordingInBackground] Error during processing sermon ${sermonId}:`, err);
+    finalError = err.message || 'An unknown error occurred during background processing.';
+    finalStatus = 'error';
+
   } finally {
-    // Dispatch FINISH_PROCESSING, ensuring payload error is string | undefined
+    // 5. Update Sermon Record in AsyncStorage
+    try {
+      console.log(`[processRecordingInBackground] Updating final sermon record for ${sermonId} with status: ${finalStatus}`);
+      await updateSermon(sermonId, {
+        processingStatus: finalStatus,
+        transcript: finalStatus === 'completed' ? transcriptResult : '', 
+        // Ensure assignment matches type: TranscriptionResponse | undefined
+        transcriptData: finalStatus === 'completed' && transcriptResponse ? transcriptResponse : undefined, 
+        summary: finalStatus === 'completed' ? summaryResult : undefined,
+        processingError: finalError,
+        audioUrl: audioUri, 
+      });
+      console.log(`[processRecordingInBackground] Final update successful for ${sermonId}.`);
+    } catch (updateErr: any) {
+      console.error(`[processRecordingInBackground] CRITICAL: Failed to update final sermon status for ${sermonId}:`, updateErr);
+      finalError = finalError ? `${finalError}. Additionally, failed to save final status.` : `Failed to save final status.`;
+    }
+    
+    // Schedule final notification based on status
+    try {
+      let notificationTitle = "Sermon Ready";
+      let notificationBody = `"${sermonTitle}" has been processed successfully.`;
+      if (finalStatus === 'error') {
+          notificationTitle = "Processing Error";
+          notificationBody = `Failed to process "${sermonTitle}": ${finalError || 'Unknown error'}`;
+      }
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: notificationTitle,
+          body: notificationBody,
+          // Optional: Add sound, data for tap action, etc.
+          // data: { sermonId: sermonId } 
+        },
+        trigger: null, // Send immediately
+      });
+    } catch (e) {
+      console.warn(`[processRecordingInBackground] Failed to schedule final notification: ${e}`);
+    }
+    
+    // 7. Dispatch FINISH_PROCESSING to update context state
     let dispatchPayload: { error?: string } | undefined = undefined;
     if (finalError) {
-      dispatchPayload = { error: finalError ?? undefined }; 
+      dispatchPayload = { error: finalError }; 
     }
-    dispatch({ 
-      type: 'FINISH_PROCESSING', 
-      payload: dispatchPayload
-    });
+    dispatch({ type: 'FINISH_PROCESSING', payload: dispatchPayload });
+    console.log(`[processRecordingInBackground] Task finished for sermon ${sermonId}. Status: ${finalStatus}`);
   }
 }
 

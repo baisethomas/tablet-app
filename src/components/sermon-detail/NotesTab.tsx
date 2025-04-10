@@ -14,19 +14,22 @@ import {
 import { useThemeStyles } from '../../hooks/useThemeStyles';
 import { SavedSermon } from '../../types/sermon';
 import { useSermons } from '../../hooks/useSermons';
-import { RouteProp } from '@react-navigation/native';
+import type { MaterialTopTabScreenProps } from '@react-navigation/material-top-tabs';
 
-// Define params type
-type NotesTabParams = {
-  NotesTab: {
-    sermon: SavedSermon;
-    onNotesSaved?: (sermon: SavedSermon) => void;
+// Define params type for the navigator itself
+type SermonDetailTabParamList = { // Assuming this list is defined elsewhere, matching SermonDetailScreen
+  Summary: undefined;
+  Transcript: undefined;
+  Notes: { // Define expected params for Notes tab specifically if needed, or use sermon directly
+      sermon: SavedSermon;
+      onNotesSaved?: (sermon: SavedSermon) => void;
   };
 };
 
+// Use MaterialTopTabScreenProps for the specific screen's props
 interface NotesTabProps {
-  sermon?: SavedSermon;
-  route?: RouteProp<NotesTabParams, 'NotesTab'>;
+  sermon?: SavedSermon; // Keep direct prop for flexibility
+  route?: MaterialTopTabScreenProps<SermonDetailTabParamList, 'Notes'>['route']; // Use the correct type and key
   onNotesSaved?: (sermon: SavedSermon) => void;
 }
 
@@ -141,7 +144,7 @@ export function NotesTab({ sermon: propSermon, route, onNotesSaved }: NotesTabPr
             <TextInput
               style={styles.input}
               multiline
-              placeholder="Add your notes here..."
+              placeholder="Thoughts..."
               placeholderTextColor={colors.text.secondary}
               value={notes}
               onChangeText={setNotes}
