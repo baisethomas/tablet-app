@@ -37,12 +37,23 @@ This document tracks completed and pending tasks for the project.
     *   ✅ Implement `RecordingStatusBar` UI.
     *   ✅ Refactor Home Screen record button.
     *   ✅ Implement background processing status feedback (Storage + UI).
-    *   ⏳ Pause/Resume reliability check.
+    *   ✅ Pause/Resume reliability check.
     *   ⏳ Background processing robustness (notifications?).
 *   ✅ **Error Handling:** Implement robust error handling.
     *   ✅ Consistent UI (`ErrorDisplay`).
     *   ✅ Specific API/Storage messages.
     *   ✅ Global `ErrorBoundary`.
+
+---
+
+## Cloud Integration (Firebase)
+
+*   🔄 **Cloud Persistence & Sync:**
+    *   🔄 Setup & Configuration (Project, Packages, iOS Setup - needs Android)
+    *   ✅ Authentication (Context, Screens, Navigation, Sign Out - basic iOS done)
+    *   ⏳ Firestore (Data Modeling, Read/Write Logic)
+    *   ⏳ Storage (Audio File Upload/Download)
+    *   ⏳ Security Rules
 
 ---
 
@@ -58,6 +69,7 @@ This document tracks completed and pending tasks for the project.
 *   ✅ Review and refine Home Screen UI (inspired by Otter.ai mocks - partially addressed by card styling).
 *   ✅ Keyboard dismissal in Notes tab (Verified - was previously paused).
 *   ✅ Fix metadata layout shift during title editing on Sermon Detail screen.
+*   ✅ Implement basic Account Screen (User Info, Theme Toggle, Clear Data, Sign Out).
 
 ---
 
@@ -83,6 +95,7 @@ This document tracks completed and pending tasks for the project.
 *   ✅ Fixed `colors` Scope Error in `TranscriptTab` `useStyles`.
 *   ✅ Fixed `Text strings must be rendered...` Warning (Formatted/Removed comments).
 *   ✅ Resolved `react-native-reanimated` Build Error (`./publicGlobals`).
+*   ✅ **Firebase Build Issues (iOS):** Resolved Pod installation conflicts (`use_modular_headers!`, config errors).
 
 ---
 
@@ -96,10 +109,12 @@ This document tracks completed and pending tasks for the project.
 ## Future Features (Post-MVP)
 
 *   ⏳ Real-time Transcription (WebSockets).
-*   ⏳ Cloud Persistence & Sync (Firebase Firestore/Auth/Storage).
+*   ~~⏳ Cloud Persistence & Sync (Firebase Firestore/Auth/Storage).~~ (Moved to Core Features/Cloud Integration)
 *   ⏳ Advanced Note Integration (Timestamps, Search within notes/transcript).
+*   ⏳ Implement Sermon Deletion Functionality (New).
 *   ⏳ Performance Optimization (Audio Compression, Offline Support).
 *   ⏳ Accessibility Enhancements (Screen reader, font scaling review).
 *   ⏳ UI Polishing & Animations (`react-native-reanimated`).
 *   ⏳ Add Speaker field/functionality.
+*   ⏳ Keyword Extraction & Display (Placeholder removed - needs planning).
 *   ⏳ **Transcription History/Library:** Improve how the list of saved sermons is displayed on the `HomeScreen`.

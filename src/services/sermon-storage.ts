@@ -127,4 +127,20 @@ export async function deleteSermon(id: string): Promise<void> {
     console.error(`[SermonStorage] Error deleting sermon ${id}:`, error);
     throw error; // Re-throw error
   }
+}
+
+/**
+ * Deletes ALL saved sermons from AsyncStorage.
+ * Use with caution!
+ * @returns Promise resolving when the operation is complete.
+ */
+export async function clearAllSermons(): Promise<void> {
+  console.log('[SermonStorage] Clearing ALL sermons...');
+  try {
+    await AsyncStorage.removeItem(STORAGE_KEY);
+    console.log('[SermonStorage] All sermons cleared successfully.');
+  } catch (error) {
+    console.error('[SermonStorage] Error clearing all sermons:', error);
+    throw error; // Re-throw error
+  }
 } 

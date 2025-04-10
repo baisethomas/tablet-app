@@ -4,17 +4,16 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   Keyboard,
   ScrollView
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
 import { SavedSermon } from '../../types/sermon';
 import { useSermons } from '../../hooks/useSermons';
-import type { MaterialTopTabScreenProps } from '@react-navigation/material-top-tabs';
+// import { RouteProp } from '@react-navigation/native'; // Remove this
 
 // Define params type for the navigator itself
 type SermonDetailTabParamList = { // Assuming this list is defined elsewhere, matching SermonDetailScreen
@@ -26,10 +25,19 @@ type SermonDetailTabParamList = { // Assuming this list is defined elsewhere, ma
   };
 };
 
-// Use MaterialTopTabScreenProps for the specific screen's props
+// Keep the more specific SermonDetailTabParamList if defined elsewhere, 
+// but simplify NotesTabParams for local use with RouteProp
+type NotesTabParams = {
+  Notes: {
+    sermon: SavedSermon;
+    onNotesSaved?: (sermon: SavedSermon) => void;
+  };
+};
+
+// Revert to using RouteProp for props
 interface NotesTabProps {
-  sermon?: SavedSermon; // Keep direct prop for flexibility
-  route?: MaterialTopTabScreenProps<SermonDetailTabParamList, 'Notes'>['route']; // Use the correct type and key
+  sermon?: SavedSermon; 
+  route?: any; // Use 'any' as a temporary workaround for type errors
   onNotesSaved?: (sermon: SavedSermon) => void;
 }
 
@@ -70,20 +78,17 @@ export function NotesTab({ sermon: propSermon, route, onNotesSaved }: NotesTabPr
   };
 
   const styles = StyleSheet.create({
-    keyboardAvoidingContainer: {
-      flex: 1,
-    },
     outerContainer: {
       flex: 1,
       backgroundColor: colors.background.primary,
     },
     innerContainer: {
-      flex: 1,
+      flexGrow: 1,
       padding: theme.spacing.md,
       justifyContent: 'space-between',
     },
     input: {
-      flex: 1,
+      minHeight: 200,
       backgroundColor: colors.background.secondary,
       color: colors.text.primary,
       padding: theme.spacing.md,
@@ -134,34 +139,32 @@ export function NotesTab({ sermon: propSermon, route, onNotesSaved }: NotesTabPr
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.keyboardAvoidingContainer}
+    <KeyboardAwareScrollView
+      style={styles.outerContainer}
+      contentContainerStyle={styles.innerContainer}
+      resetScrollToCoords={{ x: 0, y: 0 }}
+      enableOnAndroid={true}
+      keyboardShouldPersistTaps="handled"
     >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <View style={styles.outerContainer}>
-          <View style={styles.innerContainer}>
-            <TextInput
-              style={styles.input}
-              multiline
-              placeholder="Thoughts..."
-              placeholderTextColor={colors.text.secondary}
-              value={notes}
-              onChangeText={setNotes}
-              textAlignVertical="top"
-            />
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={handleSaveNotes}
-              disabled={notes === (sermon.notes || '')}
-            >
-              <Text style={styles.saveButtonText}>
-                Save Notes
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+      <TextInput
+        style={styles.input}
+        multiline
+        placeholder="Thoughts..."
+        placeholderTextColor={colors.text.secondary}
+        value={notes}
+        onChangeText={setNotes}
+        textAlignVertical="top"
+        scrollEnabled={false}
+      />
+      <TouchableOpacity
+        style={styles.saveButton}
+        onPress={handleSaveNotes}
+        disabled={notes === (sermon.notes || '')}
+      >
+        <Text style={styles.saveButtonText}>
+          Save Notes
+        </Text>
+      </TouchableOpacity>
+    </KeyboardAwareScrollView>
   );
 } 

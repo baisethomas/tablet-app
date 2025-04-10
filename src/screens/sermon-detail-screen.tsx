@@ -21,6 +21,7 @@ import { SavedSermon } from '../types/sermon';
 import { SummaryTab } from '../components/sermon-detail/SummaryTab';
 import { TranscriptTab } from '../components/sermon-detail/TranscriptTab';
 import { NotesTab } from '../components/sermon-detail/NotesTab';
+// import { KeywordsTab } from '../components/sermon-detail/KeywordsTab'; // Removed import
 import { ErrorDisplay } from '../components/ui/ErrorDisplay';
 import { getSermonById } from '../services/sermon-storage'; // Import storage service
 import { useSermons } from '../hooks/useSermons'; // Import the hook
@@ -34,6 +35,7 @@ type SermonDetailTabParamList = {
   Summary: undefined;
   Transcript: undefined;
   Notes: undefined;
+  // Keywords: undefined; // Removed Keywords tab
 };
 
 // Define a general type for screen props within this tab navigator
@@ -381,6 +383,12 @@ export function SermonDetailScreen() {
             />
           )}
         </Tab.Screen>
+        {/* REMOVED: Keywords Tab Screen */}
+        {/* <Tab.Screen name="Keywords">
+          {(props: SermonDetailTabScreenProps<'Keywords'>) => 
+            <KeywordsTab {...props} sermon={sermon!} />
+          } 
+        </Tab.Screen> */}
       </Tab.Navigator>
     </SafeAreaView>
   );

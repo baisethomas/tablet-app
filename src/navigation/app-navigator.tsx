@@ -9,6 +9,7 @@ import { TranscriptionScreen } from '../screens/transcription-screen';
 import { TranscriptionTestScreen } from '../screens/TranscriptionTestScreen';
 import { LibraryScreen } from '../screens/library-screen';
 import { SermonDetailScreen } from '../screens/sermon-detail-screen';
+import { AccountScreen } from '../screens/account-screen';
 import { useTheme } from '../contexts/theme-context';
 import { useRecording } from '../contexts/recording-context';
 import { useNavigation } from '@react-navigation/native';
@@ -30,16 +31,6 @@ export type MainTabParamList = {
 
 const Stack = createStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
-
-// Placeholder Account screen
-function AccountScreen() {
-  const { colors } = useTheme();
-  return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background.primary }}>
-      <Text style={{ color: colors.text.primary }}>Account Screen - Coming Soon</Text>
-    </View>
-  );
-}
 
 // Custom middle button component for Record
 interface RecordButtonProps {
@@ -140,45 +131,43 @@ export function AppNavigator() {
   const { colors } = useTheme();
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        screenOptions={{ 
-          headerShown: false, 
-          headerStyle: { 
-            backgroundColor: colors.background.primary,
-            shadowOpacity: 0, 
-            elevation: 0, 
-          },
-          headerTintColor: colors.text.primary,
+    <Stack.Navigator
+      screenOptions={{ 
+        headerShown: false, 
+        headerStyle: { 
+          backgroundColor: colors.background.primary,
+          shadowOpacity: 0, 
+          elevation: 0, 
+        },
+        headerTintColor: colors.text.primary,
+      }}
+    >
+      <Stack.Screen name="Main" component={MainTabs} />
+      <Stack.Screen 
+        name="Transcription" 
+        component={TranscriptionScreen} 
+        options={{ 
+          headerShown: true, 
+          title: 'Record & Transcribe',
+        }} 
+      />
+      <Stack.Screen 
+        name="TranscriptionTest" 
+        component={TranscriptionTestScreen}
+        options={{
+          headerShown: true,
+          title: 'Transcription Test',
         }}
-      >
-        <Stack.Screen name="Main" component={MainTabs} />
-        <Stack.Screen 
-          name="Transcription" 
-          component={TranscriptionScreen} 
-          options={{ 
-            headerShown: true, 
-            title: 'Record & Transcribe',
-          }} 
-        />
-        <Stack.Screen 
-          name="TranscriptionTest" 
-          component={TranscriptionTestScreen}
-          options={{
-            headerShown: true,
-            title: 'Transcription Test',
-          }}
-        />
-        <Stack.Screen 
-          name="SermonDetail" 
-          component={SermonDetailScreen} 
-          options={{ 
-            headerShown: true,
-            title: 'Sermon Details',
-          }} 
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+      />
+      <Stack.Screen 
+        name="SermonDetail" 
+        component={SermonDetailScreen} 
+        options={{ 
+          headerShown: true,
+          title: 'Sermon Details',
+        }} 
+      />
+    </Stack.Navigator>
   );
 }
 

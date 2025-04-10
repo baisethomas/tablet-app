@@ -16,7 +16,10 @@ const apiKey = Constants.expoConfig?.extra?.OPENAI_API_KEY;
 
 let openai: OpenAI | null = null;
 if (typeof apiKey === 'string' && apiKey) {
-  openai = new OpenAI({ apiKey });
+  openai = new OpenAI({ 
+    apiKey 
+    // dangerouslyAllowBrowser: true
+  });
 } else {
   console.warn('OpenAI API key not found or invalid. Please set OPENAI_API_KEY in your app config (e.g., app.json extra field) and ensure it is a string.');
 }

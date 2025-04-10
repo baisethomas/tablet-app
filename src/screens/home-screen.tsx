@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -10,7 +10,9 @@ import {
   RefreshControl,
   StatusBar,
   Alert,
-  Platform
+  Platform,
+  Animated,
+  I18nManager
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -25,6 +27,8 @@ import { ErrorDisplay } from '../components/ui/ErrorDisplay';
 import { getAllSermons } from '../services/sermon-storage';
 import * as Notifications from 'expo-notifications';
 import { formatMillisToMMSS } from '../utils/formatters';
+import { useSermons } from '../hooks/useSermons';
+import { Swipeable, RectButton } from 'react-native-gesture-handler';
 
 // Define the structure for saved data
 interface SavedSermon {
@@ -103,10 +107,12 @@ export function HomeScreen() {
   const { colors, theme } = useTheme();
   const { fontWeight } = useThemeStyles();
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  const { deleteSermon, isLoading: isDeleting } = useSermons();
   const [sermons, setSermons] = useState<SavedSermon[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const openSwipeableRef = useRef<Swipeable | null>(null);
 
   // Request notification permissions on component mount
   useEffect(() => {
@@ -310,6 +316,25 @@ export function HomeScreen() {
     listContentContainer: {
       paddingBottom: theme.spacing.md, // Add padding at the bottom of the list
     },
+    rightActionContainer: {
+      width: 80,
+      flexDirection: I18nManager.isRTL ? 'row-reverse' : 'row',
+    },
+    deleteButton: {
+      flex: 1,
+      backgroundColor: colors.ui.error,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginVertical: theme.spacing.sm,
+      borderTopRightRadius: 8, 
+      borderBottomRightRadius: 8,
+    },
+    deleteButtonText: {
+      color: '#FFFFFF',
+      fontSize: theme.fontSizes.button,
+      fontWeight: fontWeight('medium'),
+      paddingHorizontal: 10,
+    },
   });
 
   const loadSermonsFromStorage = useCallback(async () => {
@@ -339,11 +364,21 @@ export function HomeScreen() {
     loadSermonsFromStorage();
   }, [loadSermonsFromStorage]);
 
-  const handlePressItem = (sermonId: string) => {
-    navigation.navigate('SermonDetail', { sermonId });
+  const handlePressItem = (item: SavedSermon) => {
+    closeOpenSwipeable();
+    if (item.processingStatus === 'error') {
+        Alert.alert(
+          'Processing Error',
+          item.processingError || 'An unknown error occurred during processing.',
+          [{ text: 'OK' }]
+        );
+      } else if (item.processingStatus !== 'processing') {
+        navigation.navigate('SermonDetail', { sermonId: item.id });
+      }
   };
 
   const handleNewTranscription = () => {
+    closeOpenSwipeable();
     navigation.navigate('Transcription');
   };
 
@@ -357,6 +392,57 @@ export function HomeScreen() {
         console.error("Error generating demo data:", error);
       }
     }
+  };
+
+  const closeOpenSwipeable = () => {
+      openSwipeableRef.current?.close();
+  };
+
+  const handleDelete = (sermonToDelete: SavedSermon) => {
+    closeOpenSwipeable();
+    Alert.alert(
+      'Delete Recording?',
+      `Are you sure you want to permanently delete "${sermonToDelete.title || 'this recording'}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const success = await deleteSermon(sermonToDelete.id);
+              if (success) {
+                // Remove from local state immediately for UI update
+                setSermons(prevSermons => prevSermons.filter(s => s.id !== sermonToDelete.id));
+              } else {
+                Alert.alert('Error', 'Could not delete the recording. Please try again.');
+              }
+            } catch (e) {
+              console.error("Deletion error:", e);
+              Alert.alert('Error', 'An unexpected error occurred while deleting.');
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const renderRightActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, item: SavedSermon) => {
+    const trans = dragX.interpolate({
+        inputRange: [-80, 0],
+        outputRange: [0, 80],
+        extrapolate: 'clamp',
+    });
+    return (
+      <View style={styles.rightActionContainer}>
+        <Animated.View style={{ flex: 1, transform: [{ translateX: trans }] }}>
+            <RectButton style={styles.deleteButton} onPress={() => handleDelete(item)}>
+                <Ionicons name="trash-outline" size={24} color="#FFFFFF" />
+            </RectButton>
+        </Animated.View>
+      </View>
+    );
   };
 
   const renderSermonItem = ({ item }: { item: SavedSermon }) => {
@@ -373,18 +459,15 @@ export function HomeScreen() {
     // Get preview text (first line, no bullet)
     const previewText = item.transcript?.split('\n')[0] || (item.processingStatus === 'completed' ? 'No transcript available' : ' ');
 
-    const handleCardPress = () => {
-      if (item.processingStatus === 'error') {
-        Alert.alert(
-          'Processing Error',
-          item.processingError || 'An unknown error occurred during processing.',
-          [{ text: 'OK' }]
-        );
-      } else if (item.processingStatus !== 'processing') {
-        // Only navigate if not processing and no error
-        navigation.navigate('SermonDetail', { sermonId: item.id });
-      }
-      // Do nothing if processing
+    // Ref for the individual swipeable row
+    const swipeableRowRef = useRef<Swipeable>(null);
+
+    // Function to handle opening, ensuring only one is open
+    const handleSwipeableOpen = () => {
+        if (openSwipeableRef.current && openSwipeableRef.current !== swipeableRowRef.current) {
+            openSwipeableRef.current.close();
+        }
+        openSwipeableRef.current = swipeableRowRef.current;
     };
 
     const cardStyle = [
@@ -394,38 +477,46 @@ export function HomeScreen() {
     ];
 
     return (
-      <TouchableOpacity 
-        style={cardStyle} 
-        onPress={handleCardPress}
-        activeOpacity={item.processingStatus === 'processing' ? 1 : 0.7}
+      <Swipeable
+        ref={swipeableRowRef}
+        friction={2}
+        rightThreshold={40}
+        renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item)}
+        onSwipeableOpen={handleSwipeableOpen}
       >
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.title || 'Note'}</Text>
-          {/* Combine time and duration */}
-          <Text style={styles.cardTime}>
-            {time} · {duration}
-          </Text>
-        </View>
-        {/* Render preview text directly */}
-        <Text style={styles.cardPreview} numberOfLines={2}>{previewText}</Text>
-
-        {/* Add Status Indicator */}
-        {(item.processingStatus === 'processing' || item.processingStatus === 'error') && (
-          <View style={styles.cardStatusContainer}>
-            {item.processingStatus === 'processing' && (
-              <ActivityIndicator size="small" color={colors.text.secondary} />
-            )}
-            {item.processingStatus === 'error' && (
-              <Ionicons name="alert-circle-outline" size={16} color={colors.ui.error} />
-            )}
-            <Text 
-              style={[styles.cardStatusText, item.processingStatus === 'error' && styles.cardErrorText]}
-            >
-              {item.processingStatus === 'processing' ? 'Processing...' : 'Error'}
+        <TouchableOpacity 
+          style={cardStyle} 
+          onPress={() => handlePressItem(item)}
+          activeOpacity={item.processingStatus === 'processing' ? 1 : 0.7}
+        >
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle} numberOfLines={1}>{item.title || 'Note'}</Text>
+            {/* Combine time and duration */}
+            <Text style={styles.cardTime}>
+              {time} · {duration}
             </Text>
           </View>
-        )}
-      </TouchableOpacity>
+          {/* Render preview text directly */}
+          <Text style={styles.cardPreview} numberOfLines={2}>{previewText}</Text>
+
+          {/* Add Status Indicator */}
+          {(item.processingStatus === 'processing' || item.processingStatus === 'error') && (
+            <View style={styles.cardStatusContainer}>
+              {item.processingStatus === 'processing' && (
+                <ActivityIndicator size="small" color={colors.text.secondary} />
+              )}
+              {item.processingStatus === 'error' && (
+                <Ionicons name="alert-circle-outline" size={16} color={colors.ui.error} />
+              )}
+              <Text 
+                style={[styles.cardStatusText, item.processingStatus === 'error' && styles.cardErrorText]}
+              >
+                {item.processingStatus === 'processing' ? 'Processing...' : 'Error'}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </Swipeable>
     );
   };
 

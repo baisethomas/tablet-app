@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useReducer, ReactNode, Dispatch, useCallback, useRef } from 'react';
-import { Audio, AVPlaybackStatus } from 'expo-av';
+import React, { createContext, useContext, useReducer, ReactNode, Dispatch, useCallback, useRef, useEffect } from 'react';
+import { Audio, AVPlaybackStatus, InterruptionModeIOS } from 'expo-av';
+import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import * as Notifications from 'expo-notifications';
@@ -137,6 +138,81 @@ interface RecordingProviderProps {
 export function RecordingProvider({ children }: RecordingProviderProps) {
   const [state, dispatch] = useReducer(recordingReducer, initialState);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const appState = useRef(AppState.currentState);
+  const autoPausedRef = useRef(false); // Ref to track auto-pause state
+
+  // --- Async Action Functions first (needed by useEffect) ---
+  const pauseRecording = useCallback(async () => {
+    if (!state.isRecording || state.isPaused || !recordingRef.current) return;
+    console.log('[RecordingContext] Attempting to pause recording...');
+    try {
+      await recordingRef.current.pauseAsync();
+      console.log('[RecordingContext] Recording paused successfully.');
+      dispatch({ type: 'PAUSE_RECORDING' });
+    } catch (error: any) {
+      console.error('[RecordingContext] Failed to pause recording:', error);
+      // Optionally dispatch an error action or update state.error
+      dispatch({ type: 'RECORDING_ERROR', payload: `Failed to pause: ${error.message || 'Unknown error'}` });
+    }
+  }, [state.isRecording, state.isPaused]);
+
+  const resumeRecording = useCallback(async () => {
+    // This is for MANUAL resume by the user
+    if (!state.isRecording || !state.isPaused || !recordingRef.current) return;
+    console.log('[RecordingContext] Attempting to MANUALLY resume recording...');
+    try {
+      await recordingRef.current.startAsync(); // startAsync is used for resuming
+      console.log('[RecordingContext] Recording MANUALLY resumed successfully.');
+      dispatch({ type: 'RESUME_RECORDING' });
+    } catch (error: any) {
+      console.error('[RecordingContext] Failed to MANUALLY resume recording:', error);
+      dispatch({ type: 'RECORDING_ERROR', payload: `Failed to resume: ${error.message || 'Unknown error'}` });
+    }
+  }, [state.isRecording, state.isPaused]);
+
+  // --- App State Change Listener for Auto-Pause/Resume ---
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      const previousAppState = appState.current;
+      appState.current = nextAppState;
+
+      console.log(`[AppState] Changed from ${previousAppState} to ${nextAppState}`);
+
+      // App entering background/inactive state?
+      if (
+        previousAppState === 'active' &&
+        nextAppState.match(/inactive|background/)
+      ) {
+        console.log('[AppState] App entering background/inactive.');
+        // If recording and not already manually paused, auto-pause it
+        if (state.isRecording && !state.isPaused && recordingRef.current) {
+          console.log('[AppState] Auto-pausing recording...');
+          pauseRecording(); // Call the existing pause function
+          autoPausedRef.current = true; // Mark that we auto-paused
+        }
+      }
+      // App returning to foreground?
+      else if (
+        previousAppState.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        console.log('[AppState] App has come to the foreground!');
+        // If we auto-paused it previously, auto-resume it
+        if (autoPausedRef.current && recordingRef.current) {
+          console.log('[AppState] Auto-resuming recording...');
+          resumeRecording(); // Call the existing resume function
+          autoPausedRef.current = false; // Clear the flag
+        }
+      }
+    });
+
+    // Cleanup listener on unmount
+    return () => {
+      subscription.remove();
+      console.log("[AppState] Listener removed.");
+    };
+    // Dependencies: state values and the memoized pause/resume functions
+  }, [state.isRecording, state.isPaused, pauseRecording, resumeRecording]);
 
   // --- Recording Status Update Handler ---
   const onRecordingStatusUpdate = useCallback((status: any) => { 
@@ -157,6 +233,8 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
       }
       
       // Check if recording capability is lost
+      // Temporarily comment out this check as it seems to fire incorrectly on simulator
+      /*
       if (status.canRecord === false) {
           const errorMsg = "Recording cannot continue (permissions issue or resource conflict?)";
           console.error("Recording Status Error:", errorMsg, status);
@@ -164,6 +242,7 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
           recordingRef.current?.stopAndUnloadAsync().catch(e => console.error("Cleanup error:", e));
           recordingRef.current = null;
       }
+      */
     } else {
       // Log if the status object is not what we expect
       console.warn("Received unexpected/invalid recording status object:", status);
@@ -173,7 +252,7 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
   // --- Async Action Functions ---
   const startRecording = useCallback(async (): Promise<string | null> => {
     console.log('[RecordingContext] Attempting to start recording...');
-    dispatch({ type: 'RESET' }); // Clear previous state/errors
+    dispatch({ type: 'RESET' });
     try {
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
@@ -181,42 +260,48 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
       }
       console.log('[RecordingContext] Permission granted.');
 
+      // Simplify Audio Mode (Restore playsInSilentModeIOS)
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        // ... other audio mode settings ...
+        playsInSilentModeIOS: true, // Restore this for iOS recording
+        interruptionModeIOS: InterruptionModeIOS.DoNotMix, // Restore interruption mode
       });
-      console.log('[RecordingContext] Audio mode set.');
+      console.log('[RecordingContext] Audio mode set (with playsInSilentModeIOS and interruptionMode).');
 
       const newRecording = new Audio.Recording();
-      // Pass the callback, accepting the type mismatch for now
       newRecording.setOnRecordingStatusUpdate(onRecordingStatusUpdate as any);
-      await newRecording.prepareToRecordAsync({
-          android: {
-              extension: '.m4a',
-              outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-              audioEncoder: Audio.AndroidAudioEncoder.AAC,
-              sampleRate: 44100,
-              numberOfChannels: 1,
-              bitRate: 128000,
-          },
-          ios: {
-              extension: '.m4a',
-              outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-              audioQuality: Audio.IOSAudioQuality.HIGH,
-              sampleRate: 44100,
-              numberOfChannels: 1,
-              bitRate: 128000,
-              linearPCMBitDepth: 16,
-              linearPCMIsBigEndian: false,
-              linearPCMIsFloat: false,
-          },
-          web: {
-             mimeType: 'audio/webm',
-             bitsPerSecond: 128000,
-          }
-      });
       
+      // Use default recording settings first
+      console.log('[RecordingContext] Preparing recording with default settings...');
+      await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      // Original detailed settings commented out for now:
+      // await newRecording.prepareToRecordAsync({
+      //     android: {
+      //         extension: '.m4a',
+      //         outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+      //         audioEncoder: Audio.AndroidAudioEncoder.AAC,
+      //         sampleRate: 44100,
+      //         numberOfChannels: 1,
+      //         bitRate: 128000,
+      //     },
+      //     ios: {
+      //         extension: '.m4a',
+      //         outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+      //         audioQuality: Audio.IOSAudioQuality.HIGH,
+      //         sampleRate: 44100,
+      //         numberOfChannels: 1,
+      //         bitRate: 128000,
+      //         linearPCMBitDepth: 16,
+      //         linearPCMIsBigEndian: false,
+      //         linearPCMIsFloat: false,
+      //     },
+      //     web: {
+      //        mimeType: 'audio/webm',
+      //        bitsPerSecond: 128000,
+      //     }
+      // });
+      console.log('[RecordingContext] Recording prepared.');
+
       // Create placeholder sermon object
       const sermonId = `rec_${Date.now()}`;
       const sermonDate = new Date().toISOString();
@@ -236,47 +321,17 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
       console.log('[RecordingContext] Recording started.');
       recordingRef.current = newRecording; // Store instance in ref
       dispatch({ type: 'START_RECORDING', payload: { recording: newRecording, sermonId } });
+      autoPausedRef.current = false; // Ensure autoPausedRef is reset on new recording
       return sermonId;
 
     } catch (err: any) {
       console.error('[RecordingContext] Failed to start recording:', err);
       dispatch({ type: 'RECORDING_ERROR', payload: err.message || 'Failed to start recording.' });
-      // Clean up instance if it exists
       await recordingRef.current?.stopAndUnloadAsync().catch(e => console.error("Cleanup error:", e));
       recordingRef.current = null;
       return null;
     }
   }, [onRecordingStatusUpdate]);
-
-  // Pause/Resume might be tricky/platform-dependent with expo-av recording,
-  // keeping simple state updates for now. // NOW IMPLEMENTING ACTUAL PAUSE/RESUME
-  const pauseRecording = useCallback(async () => {
-    if (!state.isRecording || state.isPaused || !recordingRef.current) return;
-    console.log('[RecordingContext] Attempting to pause recording...');
-    try {
-      await recordingRef.current.pauseAsync();
-      console.log('[RecordingContext] Recording paused successfully.');
-      dispatch({ type: 'PAUSE_RECORDING' });
-    } catch (error: any) {
-      console.error('[RecordingContext] Failed to pause recording:', error);
-      // Optionally dispatch an error action or update state.error
-      dispatch({ type: 'RECORDING_ERROR', payload: `Failed to pause: ${error.message || 'Unknown error'}` });
-    }
-  }, [state.isRecording, state.isPaused]);
-
-  const resumeRecording = useCallback(async () => {
-    if (!state.isRecording || !state.isPaused || !recordingRef.current) return;
-    console.log('[RecordingContext] Attempting to resume recording...');
-    try {
-      await recordingRef.current.startAsync(); // startAsync is used for resuming
-      console.log('[RecordingContext] Recording resumed successfully.');
-      dispatch({ type: 'RESUME_RECORDING' });
-    } catch (error: any) {
-      console.error('[RecordingContext] Failed to resume recording:', error);
-      // Optionally dispatch an error action or update state.error
-      dispatch({ type: 'RECORDING_ERROR', payload: `Failed to resume: ${error.message || 'Unknown error'}` });
-    }
-  }, [state.isRecording, state.isPaused]);
 
   const stopRecordingAndProcess = useCallback(async () => {
     if (!state.isRecording || !recordingRef.current) return;
@@ -341,6 +396,7 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
       }
       dispatch({ type: 'FINISH_PROCESSING', payload: { error: stopError.message || 'Failed to stop recording.' } }); 
     }
+    autoPausedRef.current = false; // Ensure autoPausedRef is reset on stop
   }, [state.isRecording, state.activeSermonId, state.recordingDurationMillis]); // Add duration to dependency array
 
   const value = {

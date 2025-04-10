@@ -72,11 +72,31 @@ export function useSermons() {
     }
   }, []);
 
+  /**
+   * Deletes a specific sermon.
+   */
+  const deleteSermon = useCallback(async (sermonId: string): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await storageDeleteSermon(sermonId);
+      console.log(`Deleted sermon ${sermonId}`);
+      return true; // Indicate success
+    } catch (e: any) {
+      console.error('Failed to delete sermon:', e);
+      setError(e.message || 'Failed to delete sermon.');
+      return false; // Indicate failure
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   return {
     isLoading,
     error,
     updateSermonNotes,
     updateSermonTitle,
-    getSermons
+    getSermons,
+    deleteSermon
   };
 } 
