@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useTheme } from '../contexts/theme-context';
 import { parseScriptureReferences } from '../services/scriptureParser';
@@ -11,27 +11,6 @@ interface InteractiveScriptureProps {
 export function InteractiveScripture({ text, onScripturePress }: InteractiveScriptureProps) {
   const { colors } = useTheme();
 
-  // Test scripture parser on component mount
-  useEffect(() => {
-    // Testing common reference formats that should work
-    const testCases = [
-      "John 3:16",
-      "John 3:16-18",
-      "1 John 2:3",
-      "Genesis 1:1",
-      "Matthew 5:3-12"
-    ];
-    
-    console.log("[InteractiveScripture] Testing scripture parser:");
-    testCases.forEach(testCase => {
-      const result = parseScriptureReferences(testCase);
-      console.log(`[InteractiveScripture] - Test "${testCase}": ${result.length > 0 ? 'SUCCESS' : 'FAILED'}`);
-      if (result.length > 0) {
-        console.log(`[InteractiveScripture] - Parsed as:`, result[0]);
-      }
-    });
-  }, []);
-
   if (!text) {
     return null;
   }
@@ -43,11 +22,6 @@ export function InteractiveScripture({ text, onScripturePress }: InteractiveScri
     // Use our regex to find all possible scripture references
     const parts = text.split(scriptureRegex);
     const matches = text.match(scriptureRegex) || [];
-    
-    console.log(`[InteractiveScripture] Processing text (${text.length} chars)`);
-    if (matches.length > 0) {
-      console.log(`[InteractiveScripture] Found ${matches.length} potential references:`, matches);
-    }
     
     let result: React.ReactNode[] = [];
     let matchIndex = 0;
@@ -67,15 +41,10 @@ export function InteractiveScripture({ text, onScripturePress }: InteractiveScri
         const reference = matches[matchIndex];
         matchIndex++;
         
-        // Always treat it as clickable
-        // This ensures all references like "John 3:16" will be clickable
         result.push(
           <Pressable
             key={`scripture-${i}`}
-            onPress={() => {
-              console.log(`[InteractiveScripture] Scripture pressed: ${reference}`);
-              onScripturePress(reference);
-            }}
+            onPress={() => onScripturePress(reference)}
             style={({ pressed }) => [
               styles.scriptureReference,
               {
