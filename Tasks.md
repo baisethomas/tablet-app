@@ -43,15 +43,20 @@ This document tracks completed and pending tasks for the project.
     *   ✅ Consistent UI (`ErrorDisplay`).
     *   ✅ Specific API/Storage messages.
     *   ✅ Global `ErrorBoundary`.
+*   ✅ **Bible Service Improvements:**
+    *   ✅ Refactor API request functions (`fetchPassage`, `fetchVerse`)
+    *   ✅ Implement verse range detection and handling
+    *   ✅ Add retry logic with exponential backoff
+    *   ✅ Implement caching layer for scripture content
+    *   ✅ Enhance error handling and user feedback in `ScriptureModal`
 
 ---
 
-## Cloud Integration (Firebase)
+## Cloud Integration (Supabase)
 
 *   🔄 **Cloud Persistence & Sync:**
     *   🔄 Setup & Configuration (Project, Packages, iOS Setup - needs Android)
     *   ✅ Authentication (Context, Screens, Navigation, Sign Out - basic iOS done)
-    *   ⏳ Firestore (Data Modeling, Read/Write Logic)
     *   ⏳ Storage (Audio File Upload/Download)
     *   ⏳ Security Rules
 
@@ -96,6 +101,8 @@ This document tracks completed and pending tasks for the project.
 *   ✅ Fixed `Text strings must be rendered...` Warning (Formatted/Removed comments).
 *   ✅ Resolved `react-native-reanimated` Build Error (`./publicGlobals`).
 *   ✅ **Firebase Build Issues (iOS):** Resolved Pod installation conflicts (`use_modular_headers!`, config errors).
+*   ✅ Fixed Bible verse range handling in `bibleService.ts`
+*   ✅ Improved error handling in `ScriptureModal`
 
 ---
 
