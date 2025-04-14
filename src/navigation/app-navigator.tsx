@@ -1,126 +1,102 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { NavigationContainer, ParamListBase } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useTheme } from '@/hooks/useTheme';
+import { ThemedText } from '@/components/ThemedText';
 import { Ionicons } from '@expo/vector-icons';
-import { HomeScreen } from '../screens/home-screen';
-import { TranscriptionScreen } from '../screens/transcription-screen';
-import { TranscriptionTestScreen } from '../screens/TranscriptionTestScreen';
-import { LibraryScreen } from '../screens/library-screen';
-import { SermonDetailScreen } from '../screens/sermon-detail-screen';
-import { AccountScreen } from '../screens/account-screen';
-import { useTheme } from '../contexts/theme-context';
-import { useRecording } from '../contexts/recording-context';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { HomeScreen } from '@/screens/home-screen';
+import { RecordScreen } from '@/screens/record-screen';
+import { SermonDetailScreen } from '@/screens/sermon-detail-screen';
+import { TranscriptionScreen } from '@/screens/transcription-screen';
+import { AccountScreen } from '@/screens/account-screen';
+import { View, ViewStyle } from 'react-native';
+import { MainTabParamList, RootStackParamList } from '@/types/navigation';
 
-// Define navigation param types
-export type RootStackParamList = {
-  Main: undefined;
-  Transcription: undefined;
-  TranscriptionTest: undefined;
-  SermonDetail: { sermonId: string };
-};
+const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
-export type MainTabParamList = {
-  Home: undefined;
-  Record: undefined;
-  Account: undefined;
-};
-
-const Stack = createStackNavigator<RootStackParamList>();
-const Tab = createBottomTabNavigator<MainTabParamList>();
-
-// Custom middle button component for Record
 interface RecordButtonProps {
-  // No onPress needed directly, action handled by context
+  color: string;
+  size: number;
 }
 
-function RecordButton() {
-  const { startRecording, isRecording } = useRecording();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-
-  const handlePress = async () => {
-    if (isRecording) return;
-
-    const newSermonId = await startRecording();
-    if (newSermonId) {
-      navigation.navigate('SermonDetail', { 
-        sermonId: newSermonId, 
-        initialTab: 'Notes'
-      });
-    } else {
-      console.error("Failed to start recording or get sermon ID.");
-    }
-  };
-
+function RecordButton({ color, size }: RecordButtonProps) {
   return (
-    <TouchableOpacity
-      style={styles.recordButton}
-      onPress={handlePress}
-      disabled={isRecording}
+    <View
+      style={{
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: "#007AFF", // iOS blue color
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 25, // Lift it up a bit
+      }}
     >
-      <View style={styles.recordButtonInner} />
-    </TouchableOpacity>
+      <Ionicons name="mic" size={30} color="white" />
+    </View>
   );
 }
 
-// Empty component for the Record tab
-function EmptyComponent() {
-  return null;
-}
-
 function MainTabs() {
-  const { colors } = useTheme();
-  
+  const { colors, isLoading } = useTheme();
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ThemedText variant="primary">Loading...</ThemedText>
+      </View>
+    );
+  }
+
   return (
     <Tab.Navigator
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.text.tertiary,
+        tabBarInactiveTintColor: colors.text.secondary,
         tabBarStyle: {
           backgroundColor: colors.background.primary,
-          borderTopColor: colors.ui.border,
-          height: 65,
-          paddingBottom: 10,
+          borderTopColor: colors.border,
+          paddingBottom: 8,
+          height: 60,
         },
         headerStyle: {
           backgroundColor: colors.background.primary,
         },
         headerTintColor: colors.text.primary,
-        headerShown: false,
       }}
     >
-      <Tab.Screen 
-        name="Home" 
-        component={HomeScreen} 
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
         options={{
-          tabBarIcon: ({ color, size, focused }: { color: string; size: number; focused: boolean }) => (
-            <Ionicons name={focused ? "home" : "home-outline"} size={size} color={color} />
+          tabBarLabel: () => null,
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+            <Ionicons name="home" size={size} color={color} />
           ),
-          tabBarLabel: 'Home',
+          headerShown: false,
         }}
       />
-      <Tab.Screen 
-        name="Record" 
-        component={EmptyComponent}
+      <Tab.Screen
+        name="Record"
+        component={RecordScreen}
         options={{
-          tabBarButton: () => (
-            <RecordButton />
-          ),
           tabBarLabel: () => null,
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+            <RecordButton color={color} size={size} />
+          ),
+          headerShown: false,
         }}
-        listeners={{}}
       />
       <Tab.Screen 
         name="Account" 
         component={AccountScreen} 
         options={{
-          tabBarIcon: ({ color, size, focused }: { color: string; size: number; focused: boolean }) => (
-            <Ionicons name={focused ? "person-circle" : "person-circle-outline"} size={size} color={color} />
+          tabBarLabel: () => null,
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+            <Ionicons name="person" size={size} color={color} />
           ),
-          tabBarLabel: 'Account',
+          headerShown: false,
         }}
       />
     </Tab.Navigator>
@@ -128,83 +104,43 @@ function MainTabs() {
 }
 
 export function AppNavigator() {
-  const { colors } = useTheme();
+  const { colors, isLoading } = useTheme();
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ThemedText variant="primary">Loading...</ThemedText>
+      </View>
+    );
+  }
 
   return (
     <Stack.Navigator
-      screenOptions={{ 
-        headerShown: false, 
-        headerStyle: { 
+      screenOptions={{
+        headerStyle: {
           backgroundColor: colors.background.primary,
-          shadowOpacity: 0, 
-          elevation: 0, 
         },
         headerTintColor: colors.text.primary,
       }}
     >
-      <Stack.Screen name="Main" component={MainTabs} />
-      <Stack.Screen 
-        name="Transcription" 
-        component={TranscriptionScreen} 
-        options={{ 
-          headerShown: true, 
-          title: 'Record & Transcribe',
-        }} 
+      <Stack.Screen
+        name="MainTabs"
+        component={MainTabs}
+        options={{ headerShown: false }}
       />
-      <Stack.Screen 
-        name="TranscriptionTest" 
-        component={TranscriptionTestScreen}
-        options={{
-          headerShown: true,
-          title: 'Transcription Test',
+      <Stack.Screen
+        name="SermonDetail"
+        component={SermonDetailScreen}
+        options={{ 
+          title: 'Sermon Details',
+          headerBackTitle: 'Main'
         }}
       />
-      <Stack.Screen 
-        name="SermonDetail" 
-        component={SermonDetailScreen} 
-        options={{ 
-          headerShown: true,
-          title: 'Sermon Details',
-        }} 
+      <Stack.Screen
+        name="Transcription"
+        component={TranscriptionScreen}
+        options={{ title: 'Transcription' }}
       />
     </Stack.Navigator>
   );
-}
-
-const styles = StyleSheet.create({
-  recordButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#0077FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-    alignSelf: 'center',
-    transform: [{ translateY: -15 }],
-  },
-  recordButtonInner: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'white',
-    alignSelf: 'center',
-  },
-  centeredInfo: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  infoText: {
-    fontSize: 18,
-    textAlign: 'center',
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  infoTextSmall: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 0,
-  },
-}); 
+} 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
+import { useTheme } from '../../hooks/useTheme';
 
 interface ErrorDisplayProps {
   message: string;
@@ -9,55 +9,80 @@ interface ErrorDisplayProps {
 }
 
 export function ErrorDisplay({ message, onRetry }: ErrorDisplayProps) {
-  const { colors, theme, fontWeight } = useThemeStyles();
-
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: theme.spacing.lg,
-      backgroundColor: colors.background.primary,
-    },
-    iconContainer: {
-      marginBottom: theme.spacing.md,
-    },
-    errorMessage: {
-      fontSize: theme.fontSizes.body,
-      color: colors.ui.error,
-      textAlign: 'center',
-      marginBottom: theme.spacing.lg,
-    },
-    retryButton: {
-      backgroundColor: colors.background.secondary,
-      paddingVertical: theme.spacing.sm,
-      paddingHorizontal: theme.spacing.lg,
-      borderRadius: 8,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.ui.border,
-    },
-    retryButtonText: {
-      fontSize: theme.fontSizes.button,
-      color: colors.primary,
-      fontWeight: fontWeight('medium'),
-    },
-  });
+  const { colors, typography, spacing, borderRadius } = useTheme();
 
   return (
-    <View style={styles.container}>
-      <View style={styles.iconContainer}>
-        <Ionicons 
-          name="alert-circle-outline" 
-          size={48} 
-          color={colors.ui.error} 
-        />
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.error + '20',
+          padding: spacing.lg,
+          borderRadius: borderRadius.lg,
+        }
+      ]}
+    >
+      <View style={styles.content}>
+        <Ionicons name="alert-circle" size={24} color={colors.error} />
+        <Text
+          style={[
+            styles.message,
+            {
+              color: colors.error,
+              fontSize: typography.fontSize.md,
+              marginLeft: spacing.md,
+            }
+          ]}
+        >
+          {message}
+        </Text>
       </View>
-      <Text style={styles.errorMessage}>{message}</Text>
       {onRetry && (
-        <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
-          <Text style={styles.retryButtonText}>Retry</Text>
+        <TouchableOpacity
+          onPress={onRetry}
+          style={[
+            styles.retryButton,
+            {
+              backgroundColor: colors.error,
+              padding: spacing.sm,
+              borderRadius: borderRadius.sm,
+              marginTop: spacing.md,
+            }
+          ]}
+        >
+          <Text
+            style={[
+              styles.retryText,
+              {
+                color: colors.text.inverse,
+                fontSize: typography.fontSize.sm,
+              }
+            ]}
+          >
+            Try Again
+          </Text>
         </TouchableOpacity>
       )}
     </View>
   );
-} 
+}
+
+const styles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  message: {
+    flex: 1,
+  },
+  retryButton: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  retryText: {
+    fontWeight: '500',
+  },
+}); 

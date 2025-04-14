@@ -1,170 +1,150 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  Platform,
-  TouchableOpacity,
-  Keyboard,
-  ScrollView
-} from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../hooks/useTheme';
+import { ThemedText } from '../ThemedText';
+import { ThemedButton } from '../ThemedButton';
 import { SavedSermon } from '../../types/sermon';
-import { useSermons } from '../../hooks/useSermons';
-// import { RouteProp } from '@react-navigation/native'; // Remove this
 
-// Define params type for the navigator itself
-type SermonDetailTabParamList = { // Assuming this list is defined elsewhere, matching SermonDetailScreen
-  Summary: undefined;
-  Transcript: undefined;
-  Notes: { // Define expected params for Notes tab specifically if needed, or use sermon directly
-      sermon: SavedSermon;
-      onNotesSaved?: (sermon: SavedSermon) => void;
-  };
-};
-
-// Keep the more specific SermonDetailTabParamList if defined elsewhere, 
-// but simplify NotesTabParams for local use with RouteProp
-type NotesTabParams = {
-  Notes: {
-    sermon: SavedSermon;
-    onNotesSaved?: (sermon: SavedSermon) => void;
-  };
-};
-
-// Revert to using RouteProp for props
 interface NotesTabProps {
-  sermon?: SavedSermon; 
-  route?: any; // Use 'any' as a temporary workaround for type errors
-  onNotesSaved?: (sermon: SavedSermon) => void;
+  sermon: SavedSermon;
+  onUpdate: (updatedSermon: SavedSermon) => void;
 }
 
-export function NotesTab({ sermon: propSermon, route, onNotesSaved }: NotesTabProps) {
-  const { colors, theme, fontWeight } = useThemeStyles();
-  const { updateSermonNotes } = useSermons();
-  
-  // Get sermon from either props or route params
-  const routeParams = route?.params;
-  const sermon = propSermon || routeParams?.sermon;
-  const saveCallback = onNotesSaved || routeParams?.onNotesSaved;
-  
-  const [notes, setNotes] = useState<string>('');
-  
-  console.log("NotesTab - RENDERING NOW");
-  console.log("NotesTab - Sermon data:", sermon?.id);
-  console.log("NotesTab - Notes content:", sermon?.notes);
-  console.log("NotesTab - Notes state:", notes);
+const createStyles = (colors: any, spacing: any, borderRadius: any) => StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  input: {
+    minHeight: 200,
+    textAlignVertical: 'top',
+  },
+  buttonContainer: {
+    flexDirection: 'column',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    backgroundColor: 'transparent',
+  },
+  primaryButton: {
+    backgroundColor: colors.primary,
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: spacing.xs,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+  },
+  secondaryButtonText: {
+    color: colors.text.primary,
+  },
+});
 
-  useEffect(() => {
-    setNotes(sermon?.notes || '');
-    console.log("NotesTab - Setting notes from sermon:", sermon?.notes);
-  }, [sermon?.notes]);
+export function NotesTab({ sermon, onUpdate }: NotesTabProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedNotes, setEditedNotes] = useState(sermon.notes || '');
+  const { colors, typography, spacing, borderRadius, isLoading: isThemeLoading } = useTheme();
+  const styles = createStyles(colors, spacing, borderRadius);
 
-  const handleSaveNotes = async () => {
-    console.log("NotesTab - Saving notes:", notes);
-    if (sermon?.id) {
-      try {
-        const updatedSermon = await updateSermonNotes(sermon.id, notes);
-        if (updatedSermon && saveCallback) {
-          saveCallback(updatedSermon);
-          Keyboard.dismiss();
-        }
-      } catch (error) {
-        console.error("Error saving notes:", error);
-      }
-    }
+  if (isThemeLoading || !colors || !spacing || !borderRadius) {
+    return null;
+  }
+
+  const handleSave = () => {
+    onUpdate({
+      ...sermon,
+      notes: editedNotes,
+    });
+    setIsEditing(false);
   };
 
-  const styles = StyleSheet.create({
-    outerContainer: {
-      flex: 1,
-      backgroundColor: colors.background.primary,
-    },
-    innerContainer: {
-      flexGrow: 1,
-      padding: theme.spacing.md,
-      justifyContent: 'space-between',
-    },
-    input: {
-      minHeight: 200,
-      backgroundColor: colors.background.secondary,
-      color: colors.text.primary,
-      padding: theme.spacing.md,
-      borderRadius: 8,
-      fontSize: theme.fontSizes.body,
-      lineHeight: theme.lineHeights.body * 1.3,
-      fontWeight: fontWeight('regular'),
-      textAlignVertical: 'top',
-      marginBottom: theme.spacing.md,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.ui.border,
-    },
-    saveButton: {
-      backgroundColor: colors.primary,
-      paddingVertical: theme.spacing.sm + 2,
-      paddingHorizontal: theme.spacing.lg,
-      borderRadius: 8,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    saveButtonText: {
-      color: '#FFFFFF',
-      fontSize: theme.fontSizes.button,
-      fontWeight: fontWeight('bold'),
-    },
-    emptyContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: theme.spacing.lg,
-      backgroundColor: colors.background.primary,
-    },
-    emptyText: {
-      fontSize: theme.fontSizes.title,
-      fontWeight: fontWeight('medium'),
-      color: colors.text.secondary,
-      textAlign: 'center',
-    },
-  });
+  const handleCancel = () => {
+    setEditedNotes(sermon.notes || '');
+    setIsEditing(false);
+  };
 
-  // Return empty state if no sermon data
-  if (!sermon) {
+  if (isEditing) {
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>Unable to load sermon data. Please try again.</Text>
+      <View style={[styles.container, { padding: spacing.md }]}>
+        <TextInput
+          style={[
+            styles.input,
+            {
+              backgroundColor: colors.background.secondary,
+              color: colors.text.primary,
+              borderColor: colors.border,
+              borderRadius: borderRadius.md,
+              padding: spacing.md,
+            }
+          ]}
+          multiline
+          value={editedNotes}
+          onChangeText={setEditedNotes}
+          placeholder="Add your notes here..."
+          placeholderTextColor={colors.text.secondary}
+        />
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.primaryButton]}
+            onPress={handleSave}
+          >
+            <Ionicons name="save-outline" size={20} color="#FFFFFF" />
+            <Text style={[styles.buttonText, styles.primaryButtonText]}>
+              Save Notes
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton]}
+            onPress={handleCancel}
+          >
+            <Ionicons name="close-outline" size={20} color={colors.text.primary} />
+            <Text style={[styles.buttonText, styles.secondaryButtonText]}>
+              Cancel
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
   return (
-    <KeyboardAwareScrollView
-      style={styles.outerContainer}
-      contentContainerStyle={styles.innerContainer}
-      resetScrollToCoords={{ x: 0, y: 0 }}
-      enableOnAndroid={true}
-      keyboardShouldPersistTaps="handled"
-    >
-      <TextInput
-        style={styles.input}
-        multiline
-        placeholder="Thoughts..."
-        placeholderTextColor={colors.text.secondary}
-        value={notes}
-        onChangeText={setNotes}
-        textAlignVertical="top"
-        scrollEnabled={false}
-      />
-      <TouchableOpacity
-        style={styles.saveButton}
-        onPress={handleSaveNotes}
-        disabled={notes === (sermon.notes || '')}
-      >
-        <Text style={styles.saveButtonText}>
-          Save Notes
-        </Text>
-      </TouchableOpacity>
-    </KeyboardAwareScrollView>
+    <ScrollView style={[styles.container, { padding: spacing.md }]}>
+      {sermon.notes ? (
+        <View>
+          <ThemedText variant="primary">{sermon.notes}</ThemedText>
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton, { alignSelf: 'flex-start', marginTop: spacing.md }]}
+            onPress={() => setIsEditing(true)}
+          >
+            <Ionicons name="pencil-outline" size={20} color={colors.text.primary} />
+            <Text style={[styles.buttonText, styles.secondaryButtonText]}>
+              Edit Notes
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[styles.button, styles.primaryButton]}
+          onPress={() => setIsEditing(true)}
+        >
+          <Ionicons name="add-outline" size={20} color="#FFFFFF" />
+          <Text style={[styles.buttonText, styles.primaryButtonText]}>
+            Add Notes
+          </Text>
+        </TouchableOpacity>
+      )}
+    </ScrollView>
   );
 } 

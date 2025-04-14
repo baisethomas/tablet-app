@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { useTheme } from '../contexts/theme-context';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useTheme } from '../hooks/useTheme';
 import { parseScriptureReferences } from '../services/scriptureParser';
 
 interface InteractiveScriptureProps {
@@ -9,59 +9,66 @@ interface InteractiveScriptureProps {
 }
 
 export function InteractiveScripture({ text, onScripturePress }: InteractiveScriptureProps) {
-  const { colors } = useTheme();
+  const { colors, typography, spacing } = useTheme();
 
-  if (!text) {
-    return null;
-  }
+  useEffect(() => {
+    // Test scripture parsing
+    const testCases = [
+      'John 3:16',
+      'Romans 8:28-30',
+      'Psalm 23:1-6',
+      'Matthew 5:1-12',
+      '1 Corinthians 13:4-7',
+    ];
 
-  // Improved regex to better match common scripture reference formats
-  const scriptureRegex = /\b(?:(?:[1-3]\s*)?[A-Za-z]+\.?\s*\d+:\d+(?:-\d+)?(?:,\s*\d+(?:-\d+)?)*)\b/g;
+    testCases.forEach(reference => {
+      const parsed = parseScriptureReferences(reference);
+      console.log(`Testing "${reference}":`, parsed);
+    });
+  }, []);
 
   const renderText = () => {
-    // Use our regex to find all possible scripture references
-    const parts = text.split(scriptureRegex);
-    const matches = text.match(scriptureRegex) || [];
+    const parts = text.split(/(\d\s*[A-Za-z]+\s+\d+:\d+(?:-\d+)?)/g);
     
-    let result: React.ReactNode[] = [];
-    let matchIndex = 0;
-    
-    for (let i = 0; i < parts.length; i++) {
-      // Add the non-scripture text
-      if (parts[i]) {
-        result.push(
-          <Text key={`text-${i}`} style={[styles.regularText, { color: colors.text.primary }]}>
-            {parts[i]}
-          </Text>
+    return parts.map((part, index) => {
+      if (index % 2 === 1) {
+        // This is a scripture reference
+        return (
+          <TouchableOpacity
+            key={index}
+            onPress={() => onScripturePress(part.trim())}
+          >
+            <Text style={[
+              styles.scriptureReference,
+              {
+                color: colors.primary,
+                fontSize: typography.fontSize.md,
+                fontWeight: typography.fontWeight.medium,
+              }
+            ]}>
+              {part}
+            </Text>
+          </TouchableOpacity>
         );
       }
       
-      // Add the scripture reference if we have a match
-      if (matchIndex < matches.length && i < parts.length - 1) {
-        const reference = matches[matchIndex];
-        matchIndex++;
-        
-        result.push(
-          <Pressable
-            key={`scripture-${i}`}
-            onPress={() => onScripturePress(reference)}
-            style={({ pressed }) => [
-              styles.scriptureReference,
-              {
-                backgroundColor: pressed ? colors.background.secondary : 'transparent',
-                borderColor: colors.primary
-              }
-            ]}
-          >
-            <Text style={[styles.scriptureText, { color: colors.primary }]}>
-              {reference}
-            </Text>
-          </Pressable>
-        );
-      }
-    }
-    
-    return result;
+      // Regular text
+      return (
+        <Text
+          key={index}
+          style={[
+            styles.regularText,
+            {
+              color: colors.text.primary,
+              fontSize: typography.fontSize.md,
+              lineHeight: typography.fontSize.md * 1.5,
+            }
+          ]}
+        >
+          {part}
+        </Text>
+      );
+    });
   };
 
   return (
@@ -73,22 +80,13 @@ export function InteractiveScripture({ text, onScripturePress }: InteractiveScri
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
-  scriptureReference: {
-    borderWidth: 1,
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    marginHorizontal: 2,
-  },
-  scriptureText: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
   regularText: {
-    fontSize: 16,
-    fontWeight: 'normal',
+    textAlign: 'left',
+  },
+  scriptureReference: {
+    textDecorationLine: 'underline',
   },
 }); 

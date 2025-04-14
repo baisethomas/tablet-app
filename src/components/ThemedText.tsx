@@ -1,50 +1,56 @@
-import React, { useMemo } from 'react';
-import { Text, TextProps, StyleSheet, TextStyle } from 'react-native';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { FontWeightKeys } from '../theme/typography';
+import React from 'react';
+import { Text, TextStyle, Pressable } from 'react-native';
+import { useTheme } from '../hooks/useTheme';
 
-interface ThemedTextProps extends TextProps {
-  variant?: 'body' | 'caption' | 'button' | 'title' | 'heading' | 'displaySmall' | 'displayMedium' | 'displayLarge';
-  weight?: FontWeightKeys;
-  color?: string;
+interface ThemedTextProps {
+  variant: 'primary' | 'secondary' | 'inverse';
+  weight?: 'regular' | 'medium' | 'bold';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl';
+  children: React.ReactNode;
+  style?: TextStyle;
+  onPress?: () => void;
 }
 
 /**
  * A themed text component that uses our typography system
  */
-export function ThemedText({
-  children,
-  variant = 'body',
-  weight = 'regular',
-  color,
+export function ThemedText({ 
+  variant, 
+  weight = 'regular', 
+  size = 'md', 
+  children, 
   style,
-  ...rest
+  onPress
 }: ThemedTextProps) {
-  const { colors, fontWeight, theme } = useThemeStyles();
-  
-  // Compute text style based on variant, weight, and color
-  const textStyle = useMemo(() => {
-    // Get font size from theme based on variant
-    const fontSize = theme.fontSizes[variant];
-    
-    // Get line height from theme based on variant
-    const lineHeight = theme.lineHeights[variant];
-    
-    // Create base style
-    const baseStyle: TextStyle = {
-      fontSize,
-      lineHeight,
-      fontWeight: fontWeight(weight),
-      color: color || colors.text.primary,
-    };
-    
-    return StyleSheet.create({
-      text: baseStyle,
-    });
-  }, [variant, weight, color, theme, colors, fontWeight]);
-  
+  const { colors, typography, isLoading } = useTheme();
+
+  if (isLoading) {
+    return (
+      <Text style={[{ color: '#000000' }, style]}>
+        {children}
+      </Text>
+    );
+  }
+
+  const textStyle: TextStyle = {
+    color: colors.text[variant],
+    fontFamily: typography.fontFamily,
+    fontSize: typography.fontSize[size],
+    fontWeight: typography.fontWeight[weight],
+  };
+
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress}>
+        <Text style={[textStyle, style]}>
+          {children}
+        </Text>
+      </Pressable>
+    );
+  }
+
   return (
-    <Text style={[textStyle.text, style]} {...rest}>
+    <Text style={[textStyle, style]}>
       {children}
     </Text>
   );
@@ -54,6 +60,6 @@ export function ThemedText({
  * Examples:
  * 
  * <ThemedText>Default body text</ThemedText>
- * <ThemedText variant="heading" weight="bold">Bold Heading</ThemedText>
- * <ThemedText variant="caption" weight="medium" color={colors.text.secondary}>Medium caption</ThemedText>
+ * <ThemedText variant="title" weight="bold">Bold Title</ThemedText>
+ * <ThemedText variant="secondary" weight="medium">Medium secondary text</ThemedText>
  */ 

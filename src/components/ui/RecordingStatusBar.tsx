@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRecording } from '../../contexts/recording-context';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
+import { useTheme } from '../../hooks/useTheme';
 
 // Helper to format time from milliseconds
 function formatDuration(millis: number): string {
@@ -24,7 +24,7 @@ export function RecordingStatusBar() {
     isProcessing, // Added for potential processing indicator
     error 
   } = useRecording();
-  const { colors, theme, fontWeight } = useThemeStyles();
+  const { colors, typography, spacing, borderRadius } = useTheme();
   const insets = useSafeAreaInsets();
   const animatedValue = React.useRef(new Animated.Value(0)).current;
 
@@ -48,17 +48,15 @@ export function RecordingStatusBar() {
       left: 0,
       right: 0,
       paddingBottom: insets.bottom, // Handle safe area
-      backgroundColor: colors.background.secondary,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.ui.border,
+      backgroundColor: colors.error + '20',
+      borderRadius: borderRadius.lg,
       transform: [{ translateY }],
     },
     content: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: theme.spacing.md,
-      paddingVertical: theme.spacing.sm,
+      padding: spacing.md,
     },
     statusContainer: {
       flexDirection: 'row',
@@ -66,31 +64,30 @@ export function RecordingStatusBar() {
       flexShrink: 1,
     },
     recordingIndicator: {
-      width: 10,
-      height: 10,
-      borderRadius: 5,
-      backgroundColor: colors.ui.error, // Red indicator
-      marginRight: theme.spacing.sm,
+      width: 8,
+      height: 8,
+      borderRadius: 4, // Fixed value for circular shape
+      backgroundColor: colors.error,
+      marginRight: spacing.sm,
     },
     statusText: {
-      fontSize: theme.fontSizes.button,
-      fontWeight: fontWeight('medium'),
-      color: colors.text.primary,
-      marginRight: theme.spacing.sm,
+      fontSize: typography.fontSize.sm,
+      fontWeight: '500',
+      color: colors.error,
+      marginLeft: spacing.sm,
     },
     durationText: {
-      fontSize: theme.fontSizes.button,
-      fontWeight: fontWeight('regular'),
+      fontSize: typography.fontSize.sm,
+      fontFamily: 'monospace',
       color: colors.text.secondary,
-      minWidth: 50, // Ensure space for MM:SS
     },
     controlsContainer: {
       flexDirection: 'row',
       alignItems: 'center',
     },
     controlButton: {
-      padding: theme.spacing.sm,
-      marginLeft: theme.spacing.sm,
+      padding: spacing.sm,
+      marginLeft: spacing.sm,
     },
   });
 
@@ -142,7 +139,7 @@ export function RecordingStatusBar() {
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={styles.controlButton} onPress={stopRecordingAndProcess}>
-                <Ionicons name="stop-circle" size={28} color={colors.primary} />
+                <Ionicons name="stop" size={24} color={colors.text.inverse} />
               </TouchableOpacity>
             </>
           )}

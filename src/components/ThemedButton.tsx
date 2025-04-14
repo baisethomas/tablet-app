@@ -1,134 +1,132 @@
 import React from 'react';
-import { Text, TouchableOpacity, TouchableOpacityProps, View, StyleSheet, ActivityIndicator } from 'react-native';
-import { useTheme } from '../contexts/theme-context';
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, View } from 'react-native';
+import { useTheme } from '../hooks/useTheme';
 
-export interface ThemedButtonProps extends TouchableOpacityProps {
-  /**
-   * Button text
-   */
-  label: string;
-  /**
-   * Button variant
-   */
+interface ThemedButtonProps {
+  title?: string;
+  children?: React.ReactNode;
+  onPress: () => void;
   variant?: 'primary' | 'secondary' | 'outline';
-  /**
-   * Button size
-   */
   size?: 'small' | 'medium' | 'large';
-  /**
-   * Whether the button is in loading state
-   */
   isLoading?: boolean;
-  /**
-   * Whether the button is in an error state
-   */
-  isError?: boolean;
+  disabled?: boolean;
+  fullWidth?: boolean;
 }
 
-/**
- * A themed button component using theme-aware styles
- */
 export function ThemedButton({
-  label,
+  title,
+  children,
+  onPress,
   variant = 'primary',
   size = 'medium',
   isLoading = false,
-  isError = false,
-  disabled,
-  style,
-  ...props
+  disabled = false,
+  fullWidth = false,
 }: ThemedButtonProps) {
-  const { colors, isDarkMode } = useTheme();
-  
-  // Button container styles
-  const variantStyles = {
-    primary: {
-      backgroundColor: isDarkMode ? colors.primary : colors.primary,
-      borderWidth: 0,
-    },
-    secondary: {
-      backgroundColor: isDarkMode ? colors.secondary : colors.secondary,
-      borderWidth: 0,
-    },
-    outline: {
-      backgroundColor: 'transparent',
-      borderWidth: 1,
-      borderColor: isDarkMode ? colors.primary : colors.primary,
-    },
+  const { colors, typography, spacing, borderRadius } = useTheme();
+
+  const getButtonStyle = () => {
+    const baseStyle = {
+      borderRadius: borderRadius.md,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      opacity: disabled ? 0.5 : 1,
+      width: fullWidth ? '100%' : 'auto',
+    };
+
+    switch (variant) {
+      case 'primary':
+        return {
+          ...baseStyle,
+          backgroundColor: colors.primary,
+        };
+      case 'secondary':
+        return {
+          ...baseStyle,
+          backgroundColor: colors.secondary,
+        };
+      case 'outline':
+        return {
+          ...baseStyle,
+          backgroundColor: 'transparent',
+          borderWidth: 1,
+          borderColor: colors.border,
+        };
+    }
   };
-  
-  // Size styles
-  const sizeStyles = {
-    small: {
-      paddingVertical: 4,
-      paddingHorizontal: 12,
-    },
-    medium: {
-      paddingVertical: 8,
-      paddingHorizontal: 16,
-    },
-    large: {
-      paddingVertical: 12,
-      paddingHorizontal: 24,
-    },
+
+  const getTextStyle = () => {
+    const baseStyle = {
+      fontSize: typography.fontSize.md,
+      fontWeight: typography.fontWeight.medium,
+    };
+
+    switch (variant) {
+      case 'primary':
+      case 'secondary':
+        return {
+          ...baseStyle,
+          color: colors.text.inverse,
+        };
+      case 'outline':
+        return {
+          ...baseStyle,
+          color: colors.text.primary,
+        };
+    }
   };
-  
-  // Text styles
-  const textStyles = {
-    small: {
-      fontSize: 14,
-    },
-    medium: {
-      fontSize: 16,
-    },
-    large: {
-      fontSize: 18,
-    },
+
+  const getSizeStyle = () => {
+    switch (size) {
+      case 'small':
+        return {
+          paddingVertical: spacing.xs,
+          paddingHorizontal: spacing.md,
+        };
+      case 'large':
+        return {
+          paddingVertical: spacing.md,
+          paddingHorizontal: spacing.xl,
+        };
+      default:
+        return {};
+    }
   };
-  
-  // Determine text color based on variant
-  const textColor = variant === 'outline' 
-    ? isDarkMode ? colors.primary : colors.primary
-    : colors.text.primary;
-  
-  // Apply styles based on state
-  const buttonStyle = [
-    styles.button,
-    variantStyles[variant],
-    sizeStyles[size],
-    disabled && { backgroundColor: isDarkMode ? colors.ui.disabled : colors.ui.disabled },
-    isError && !disabled && { backgroundColor: isDarkMode ? colors.ui.error : colors.ui.error },
-    style, // Apply any custom styles passed as props
-  ];
-  
+
   return (
     <TouchableOpacity
+      style={[styles.button, getButtonStyle(), getSizeStyle()]}
+      onPress={onPress}
       disabled={disabled || isLoading}
-      activeOpacity={0.7}
-      style={buttonStyle}
-      {...props}
     >
       {isLoading ? (
-        <ActivityIndicator size="small" color={textColor} style={styles.loader} />
-      ) : null}
-      <Text style={[styles.text, textStyles[size], { color: textColor }]}>
-        {label}
-      </Text>
+        <ActivityIndicator color={variant === 'outline' ? colors.text.primary : colors.text.inverse} />
+      ) : (
+        <View style={styles.content}>
+          {children}
+          {title && (
+            <Text style={[styles.text, getTextStyle()]}>
+              {title}
+            </Text>
+          )}
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: 8,
     flexDirection: 'row',
-    justifyContent: 'center',
+  },
+  content: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   text: {
-    fontWeight: '500',
-  },
-  loader: {
-    marginRight: 8,
+    textAlign: 'center',
   },
 }); 

@@ -69,6 +69,7 @@ export default {
       // Add Supabase keys
       SUPABASE_URL: process.env.SUPABASE_URL,
       SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+      bibleApiKey: process.env.BIBLE_API_KEY,
     }
   }
 };

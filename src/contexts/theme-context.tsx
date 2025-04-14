@@ -1,52 +1,109 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
-import { theme as defaultTheme } from '../theme';
-import { ColorPalette } from '../types/theme';
+import { Theme, FontWeight } from '../types/theme';
+
+// Default theme values
+const defaultTheme: Theme = {
+  colors: {
+    primary: '#007AFF',
+    secondary: '#5856D6',
+    background: {
+      primary: '#FFFFFF',
+      secondary: '#F2F2F7',
+    },
+    text: {
+      primary: '#000000',
+      secondary: '#8E8E93',
+      inverse: '#FFFFFF',
+    },
+    border: '#C7C7CC',
+    error: '#FF3B30',
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 16,
+    lg: 24,
+    xl: 32,
+  },
+  typography: {
+    fontFamily: 'System',
+    fontSize: {
+      xs: 12,
+      sm: 14,
+      md: 16,
+      lg: 18,
+      xl: 20,
+      xxl: 24,
+    },
+    fontWeight: {
+      regular: '400',
+      medium: '500',
+      bold: '700',
+    },
+  },
+  borderRadius: {
+    sm: 4,
+    md: 8,
+    lg: 12,
+  },
+};
 
 interface ThemeContextType {
+  theme: Theme;
   isDarkMode: boolean;
-  toggleDarkMode: () => void;
-  theme: typeof defaultTheme;
-  colors: ColorPalette;
+  isLoading: boolean;
+  getFontWeight: (weight: keyof Theme['typography']['fontWeight']) => FontWeight;
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+const ThemeContext = createContext<ThemeContextType>({
+  theme: defaultTheme,
+  isDarkMode: false,
+  isLoading: true,
+  getFontWeight: () => '400',
+});
 
-interface ThemeProviderProps {
-  children: React.ReactNode;
-}
-
-export function ThemeProvider({ children }: ThemeProviderProps) {
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const colorScheme = useColorScheme();
-  const [isDarkMode, setIsDarkMode] = useState(colorScheme === 'dark');
+  const [isLoading, setIsLoading] = useState(true);
+  const [theme, setTheme] = useState<Theme>(defaultTheme);
 
-  // Update dark mode if system preference changes
   useEffect(() => {
-    setIsDarkMode(colorScheme === 'dark');
-  }, [colorScheme]);
+    const initializeTheme = async () => {
+      try {
+        // Here you could load custom theme settings from storage
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error initializing theme:', error);
+        setIsLoading(false);
+      }
+    };
 
-  const toggleDarkMode = () => {
-    setIsDarkMode(prevMode => !prevMode);
+    initializeTheme();
+  }, []);
+
+  const getFontWeight = (weight: keyof Theme['typography']['fontWeight']): FontWeight => {
+    return theme.typography.fontWeight[weight];
   };
-
-  // Get active color scheme based on dark mode setting
-  // Restore dynamic theme based on isDarkMode state
-  const colors = isDarkMode ? defaultTheme.colors.dark : defaultTheme.colors.light;
 
   const value = {
-    isDarkMode,
-    toggleDarkMode,
-    theme: defaultTheme,
-    colors,
+    theme,
+    isDarkMode: colorScheme === 'dark',
+    isLoading,
+    getFontWeight,
   };
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={value}>
+      {children}
+    </ThemeContext.Provider>
+  );
 }
 
-export function useTheme() {
+export function useThemeContext() {
   const context = useContext(ThemeContext);
-  if (context === undefined) {
-    throw new Error('useTheme must be used within a ThemeProvider');
+  if (!context) {
+    throw new Error('useThemeContext must be used within a ThemeProvider');
   }
   return context;
 } 

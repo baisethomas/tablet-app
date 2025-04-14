@@ -1,53 +1,47 @@
-import React, { useState } from 'react';
-import { TouchableOpacity, View, StyleSheet } from 'react-native';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
+import React from 'react';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../hooks/useTheme';
 
 interface CheckboxProps {
-  initialValue?: boolean;
-  onChange?: (checked: boolean) => void;
+  checked: boolean;
+  onToggle: () => void;
+  size?: number;
 }
 
-export default function Checkbox({ initialValue = false, onChange }: CheckboxProps) {
-  const [checked, setChecked] = useState(initialValue);
-  const { colors } = useThemeStyles();
-  
-  const styles = StyleSheet.create({
-    container: {
-      width: 24,
-      height: 24,
-      borderWidth: 1,
-      borderColor: colors.ui.border,
-      borderRadius: 4,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: checked ? colors.primary : 'transparent',
-    },
-    checkmark: {
-      width: 12,
-      height: 6,
-      borderBottomWidth: 2,
-      borderLeftWidth: 2,
-      borderColor: 'white',
-      transform: [{ rotate: '-45deg' }],
-      marginTop: -2,
-    }
-  });
-  
-  const handlePress = () => {
-    const newValue = !checked;
-    setChecked(newValue);
-    if (onChange) {
-      onChange(newValue);
-    }
-  };
-  
+export function Checkbox({ checked, onToggle, size = 24 }: CheckboxProps) {
+  const { colors, borderRadius } = useTheme();
+
   return (
-    <TouchableOpacity 
-      style={styles.container}
-      onPress={handlePress}
-      activeOpacity={0.8}
-    >
-      {checked && <View style={styles.checkmark} />}
+    <TouchableOpacity onPress={onToggle}>
+      <View
+        style={[
+          styles.container,
+          {
+            width: size,
+            height: size,
+            borderRadius: borderRadius.sm,
+            borderWidth: 2,
+            borderColor: checked ? colors.primary : colors.border,
+            backgroundColor: checked ? colors.primary : 'transparent',
+          }
+        ]}
+      >
+        {checked && (
+          <Ionicons
+            name="checkmark"
+            size={size - 8}
+            color={colors.text.inverse}
+          />
+        )}
+      </View>
     </TouchableOpacity>
   );
-} 
+}
+
+const styles = StyleSheet.create({
+  container: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+}); 

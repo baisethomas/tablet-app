@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
+import { View, StyleSheet, ScrollView, ActivityIndicator, Alert, Pressable } from 'react-native';
+import { useTheme } from '../../hooks/useTheme';
+import { ThemedText } from '../ThemedText';
 import { SavedSermon } from '../../types/sermon';
 import { generateSermonSummary, StructuredSummary } from '../../services/openai';
 import { ErrorDisplay } from '../ui/ErrorDisplay';
-import { ThemedText } from '../ThemedText';
-import { RouteProp } from '@react-navigation/native';
+import { ScriptureModal } from '../ScriptureModal';
+import { fetchScriptureContent } from '../../services/bibleService';
 
 // Define params type
 type SummaryTabParams = {
@@ -15,105 +16,141 @@ type SummaryTabParams = {
 };
 
 interface SummaryTabProps {
-  sermon?: SavedSermon;
-  route?: RouteProp<SummaryTabParams, 'SummaryTab'>;
+  sermon: SavedSermon;
 }
 
-export function SummaryTab({ sermon: propSermon, route }: SummaryTabProps) {
-  const { colors, theme, fontWeight } = useThemeStyles();
+const createStyles = (colors: any, spacing: any) => StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    marginBottom: 16,
+    paddingHorizontal: spacing.md,
+  },
+  section: {
+    marginBottom: spacing.lg,
+  },
+  sectionTitle: {
+    marginBottom: spacing.sm,
+  },
+  scriptureContainer: {
+    marginBottom: spacing.md,
+  },
+  scriptureText: {
+    marginBottom: spacing.xs,
+  },
+  scriptureReference: {
+    marginBottom: spacing.xs,
+    padding: spacing.xs,
+    borderRadius: 4,
+  },
+  scriptureReferenceText: {
+    textDecorationLine: 'underline',
+  },
+  scriptureButton: {
+    marginTop: spacing.xs,
+  },
+  pressableHighlight: {
+    backgroundColor: colors.backgroundHighlight,
+  }
+});
+
+export function SummaryTab({ sermon }: SummaryTabProps) {
+  const { colors, spacing, isLoading: isThemeLoading } = useTheme();
+  const styles = createStyles(colors, spacing);
   const [summary, setSummary] = useState<StructuredSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Get sermon from either props or route params
-  const routeParams = route?.params;
-  const sermon = propSermon || routeParams?.sermon;
+  // Scripture interaction state
+  const [selectedScripture, setSelectedScripture] = useState<string | null>(null);
+  const [verseContent, setVerseContent] = useState<string>('');
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isVerseLoading, setIsVerseLoading] = useState(false);
   
-  console.log("SummaryTab - RENDERING NOW");
-  console.log("SummaryTab - Sermon data:", sermon?.id);
+  // Add defensive check for sermon
+  if (!sermon) {
+    console.error("SummaryTab - Sermon is undefined or null");
+    return (
+      <View style={[{ flex: 1, padding: spacing.md }]}>
+        <ThemedText variant="secondary">
+          No sermon data available. Please try again later.
+        </ThemedText>
+      </View>
+    );
+  }
 
-  // Fetch summary when component mounts or sermon transcript changes
   useEffect(() => {
     const fetchSummary = async () => {
-      if (!sermon?.transcript) {
+      if (!sermon.transcript) {
         setError('No transcript available to summarize.');
         setIsLoading(false);
         return;
       }
 
-      setIsLoading(true);
-      setError(null);
-      setSummary(null);
-
       try {
-        console.log(`[SummaryTab] Fetching summary for sermon ID: ${sermon.id}`);
-        const generatedSummary = await generateSermonSummary(sermon.transcript);
-        setSummary(generatedSummary);
-        console.log(`[SummaryTab] Summary fetched successfully.`);
-      } catch (err: any) {
-        console.error(`[SummaryTab] Error fetching summary: ${err.message}`);
-        setError(err.message || 'Could not generate summary.');
+        const result = await generateSermonSummary(sermon.transcript);
+        setSummary(result);
+        setError(null);
+      } catch (err) {
+        setError('Failed to generate summary. Please try again later.');
+        console.error('Error generating summary:', err);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchSummary();
-  }, [sermon?.id, sermon?.transcript]); // Depend on sermon ID and transcript
+  }, [sermon.id, sermon.transcript]);
 
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      padding: theme.spacing.md,
-      backgroundColor: colors.background.primary,
-    },
-    loadingContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    sectionContainer: {
-      marginBottom: theme.spacing.lg,
-    },
-    sectionTitle: {
-      fontSize: theme.fontSizes.title,
-      fontWeight: fontWeight('semiBold'),
-      color: colors.text.primary,
-      marginBottom: theme.spacing.sm,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.ui.border,
-      paddingBottom: theme.spacing.xs,
-    },
-    listItem: {
-      flexDirection: 'row',
-      alignItems: 'flex-start', // Align bullet and text at the top
-      marginBottom: theme.spacing.sm,
-    },
-    bullet: {
-      fontSize: theme.fontSizes.body,
-      color: colors.text.secondary,
-      marginRight: theme.spacing.sm,
-      lineHeight: theme.lineHeights.body, // Match text line height
-    },
-    scriptureText: {
-      fontSize: theme.fontSizes.body,
-      color: colors.text.secondary,
-      lineHeight: theme.lineHeights.body,
-    },
-    keyPointText: {
-      flex: 1, // Allow text to wrap
-      fontSize: theme.fontSizes.body,
-      color: colors.text.primary,
-      lineHeight: theme.lineHeights.body,
-    },
-  });
+  // Handle scripture reference clicks
+  const handleScripturePress = async (reference: string) => {
+    try {
+      setSelectedScripture(reference);
+      setIsModalVisible(true);
+      setIsVerseLoading(true);
+      setVerseContent('');
+      
+      console.log(`[SummaryTab] Fetching scripture content for: ${reference}`);
+      const content = await fetchScriptureContent(reference);
+      setVerseContent(content);
+    } catch (err: any) {
+      console.error(`[SummaryTab] Error fetching scripture: ${err.message}`);
+      // Handle specific error types
+      if (err.name === 'BibleServiceError') {
+        if (err.code === 'API_KEY_MISSING') {
+          Alert.alert('Configuration Error', 'Bible API key is not configured. Please check your .env file.');
+        } else if (err.code === 'NETWORK_ERROR') {
+          Alert.alert('Network Error', 'Failed to connect to Bible API. Please check your internet connection.');
+        } else if (err.code === 'INVALID_REFERENCE') {
+          Alert.alert('Error', 'Invalid scripture reference. Please try a different reference.');
+        } else {
+          Alert.alert('Error', err.message || 'Failed to load scripture content.');
+        }
+      } else {
+        Alert.alert('Error', 'An unexpected error occurred while fetching scripture content.');
+      }
+      setVerseContent('Error loading scripture content.');
+    } finally {
+      setIsVerseLoading(false);
+    }
+  };
 
-  // Render Logic
+  const handleCloseModal = () => {
+    setIsModalVisible(false);
+    setSelectedScripture(null);
+    setVerseContent('');
+  };
+
+  if (isThemeLoading || !colors || !spacing) {
+    return null;
+  }
+
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.container, { padding: spacing.md }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <ThemedText style={{ marginTop: theme.spacing.md }} color={colors.text.secondary}>
+        <ThemedText variant="secondary" style={{ marginTop: spacing.md }}>
           Generating summary...
         </ThemedText>
       </View>
@@ -122,62 +159,80 @@ export function SummaryTab({ sermon: propSermon, route }: SummaryTabProps) {
 
   if (error) {
     return (
-      <ErrorDisplay
-        message={error}
-        // Optionally add a retry button that calls fetchSummary again
-      />
+      <View style={[styles.container, { padding: spacing.md }]}>
+        <ThemedText variant="secondary">{error}</ThemedText>
+      </View>
     );
   }
 
   if (!summary) {
-    // This case might happen if the transcript was empty initially
     return (
-      <View style={styles.container}>
-        <ThemedText>No summary could be generated.</ThemedText>
+      <View style={[styles.container, { padding: spacing.md }]}>
+        <ThemedText variant="secondary">No summary available</ThemedText>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Overview Section */}
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>Overview</Text>
-        <ThemedText variant='body'>{summary.overview}</ThemedText>
-      </View>
-
-      {/* Scriptures Section */}
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>Scriptures</Text>
-        {summary.scriptures && summary.scriptures.length > 0 ? (
-          summary.scriptures.map((scripture, index) => (
-            <View key={`scripture-${index}`} style={styles.listItem}>
-              <Text style={styles.bullet}>•</Text>
-              <Text style={styles.scriptureText}>{scripture}</Text>
-            </View>
-          ))
-        ) : (
-          <ThemedText color={colors.text.secondary} style={{ fontStyle: 'italic' }}>
-            No specific scriptures mentioned.
+    <ScrollView style={[styles.container, { padding: spacing.md }]}>
+      <View style={styles.content}>
+        {/* Sermon Summary */}
+        <View style={styles.section}>
+          <ThemedText variant="primary" weight="bold" size="lg" style={styles.sectionTitle}>
+            Summary
           </ThemedText>
-        )}
-      </View>
-
-      {/* Key Points Section */}
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>Key Points</Text>
-        {summary.keyPoints && summary.keyPoints.length > 0 ? (
-          summary.keyPoints.map((point, index) => (
-            <View key={`point-${index}`} style={styles.listItem}>
-              <Text style={styles.bullet}>•</Text>
-              <Text style={styles.keyPointText}>{point}</Text>
-            </View>
-          ))
-        ) : (
-          <ThemedText color={colors.text.secondary} style={{ fontStyle: 'italic' }}>
-            No specific key points identified.
+          <ThemedText variant="primary" size="md">
+            {summary.overview}
           </ThemedText>
-        )}
+        </View>
+
+        {/* Key Scriptures */}
+        <View style={styles.section}>
+          <ThemedText variant="primary" weight="bold" size="lg" style={styles.sectionTitle}>
+            Key Scriptures
+          </ThemedText>
+          {summary.scriptures.map((ref, index) => (
+            <View key={index} style={styles.scriptureContainer}>
+              <Pressable 
+                onPress={() => handleScripturePress(ref)}
+                style={({ pressed }) => [
+                  styles.scriptureReference,
+                  pressed && styles.pressableHighlight
+                ]}
+              >
+                <ThemedText 
+                  variant="primary" 
+                  weight="medium" 
+                  size="md" 
+                  style={styles.scriptureReferenceText}
+                >
+                  {ref}
+                </ThemedText>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+
+        {/* Key Points */}
+        <View style={styles.section}>
+          <ThemedText variant="primary" weight="bold" size="lg" style={styles.sectionTitle}>
+            Key Points
+          </ThemedText>
+          {summary.keyPoints.map((point, index) => (
+            <ThemedText key={index} variant="primary" size="md" style={styles.scriptureText}>
+              • {point}
+            </ThemedText>
+          ))}
+        </View>
+
+        {/* Single Scripture Modal */}
+        <ScriptureModal
+          isVisible={isModalVisible}
+          reference={selectedScripture || ''}
+          verseContent={verseContent}
+          onClose={handleCloseModal}
+          isLoading={isVerseLoading}
+        />
       </View>
     </ScrollView>
   );

@@ -1,395 +1,470 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ActivityIndicator, 
-  Alert,
-  StatusBar,
-  TouchableOpacity,
-  TextInput
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import { useRoute } from '@react-navigation/core';
+import type { RouteProp } from '@react-navigation/core';
+import { Audio, AVPlaybackStatus } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../contexts/theme-context';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
-import type { RootStackParamList } from '../navigation/app-navigator';
-import { SavedSermon } from '../types/sermon';
+import { useTheme } from '../hooks/useTheme';
+import { ThemedText } from '../components/ThemedText';
 import { SummaryTab } from '../components/sermon-detail/SummaryTab';
 import { TranscriptTab } from '../components/sermon-detail/TranscriptTab';
 import { NotesTab } from '../components/sermon-detail/NotesTab';
-// import { KeywordsTab } from '../components/sermon-detail/KeywordsTab'; // Removed import
+import { SavedSermon } from '../types/sermon';
+import { getSermonById, updateSermon } from '../services/sermon-storage';
 import { ErrorDisplay } from '../components/ui/ErrorDisplay';
-import { getSermonById } from '../services/sermon-storage'; // Import storage service
-import { useSermons } from '../hooks/useSermons'; // Import the hook
-import { formatMillisToMMSS } from '../utils/formatters'; // Import the moved helper
+import { RootStackParamList } from '../types/navigation';
+import { formatMillisToMMSS } from '../utils/formatters';
 
-// Define the route prop type, including optional initialTab
-type SermonDetailScreenRouteProp = RouteProp<RootStackParamList & { SermonDetail: { initialTab?: keyof SermonDetailTabParamList } }, 'SermonDetail'>;
-
-// Define ParamList for the Top Tabs themselves
-type SermonDetailTabParamList = {
-  Summary: undefined;
-  Transcript: undefined;
-  Notes: undefined;
-  // Keywords: undefined; // Removed Keywords tab
-};
-
-// Define a general type for screen props within this tab navigator
-type SermonDetailTabScreenProps<T extends keyof SermonDetailTabParamList> = {
-  navigation: any; // Using any for simplicity, could import specific type if needed
-  route: RouteProp<SermonDetailTabParamList, T>;
-};
-
-// Create tab navigator
-const Tab = createMaterialTopTabNavigator<SermonDetailTabParamList>();
+type TabType = 'summary' | 'transcript' | 'notes';
 
 export function SermonDetailScreen() {
-  const { colors, theme } = useTheme();
-  const { fontWeight } = useThemeStyles();
-  const route = useRoute<SermonDetailScreenRouteProp>();
-  const navigation = useNavigation();
-  const { sermonId, initialTab } = route.params;
-  const { updateSermonTitle } = useSermons(); // Get the update function
-
+  const route = useRoute<RouteProp<RootStackParamList, 'SermonDetail'>>();
+  const { sermonId } = route.params;
+  const [activeTab, setActiveTab] = useState<TabType>('summary');
+  const { colors, spacing, typography } = useTheme();
   const [sermon, setSermon] = useState<SavedSermon | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // State for title editing
+  // Audio state
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [isAudioLoaded, setIsAudioLoaded] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackPosition, setPlaybackPosition] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
+
   const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editableTitle, setEditableTitle] = useState('');
+  const [editedTitle, setEditedTitle] = useState('');
   const titleInputRef = useRef<TextInput>(null);
 
-  // Load sermon data using the service
+  // Fetch sermon data when component mounts or sermonId changes
   useEffect(() => {
-    const loadSermonDetail = async () => {
-      if (!sermonId) {
-        setError('No sermon ID provided');
-        setIsLoading(false);
-        return;
-      }
-      
+    async function loadSermonData() {
+      console.log(`[SermonDetailScreen] Loading sermon with ID: ${sermonId}`);
       setIsLoading(true);
       setError(null);
-      setSermon(null);
       
       try {
-        console.log(`[SermonDetail] Loading sermon with ID: ${sermonId}`);
-        const foundSermon = await getSermonById(sermonId);
-        
-        console.log("[SermonDetail] Raw data loaded from storage:", JSON.stringify(foundSermon, null, 2));
-
-        if (!foundSermon) {
-          console.error(`[SermonDetail] Sermon with ID ${sermonId} not found.`);
-          throw new Error(`Recording details could not be found.`); // User-friendly message
+        if (!sermonId) {
+          throw new Error('Invalid sermon ID');
         }
-
-        console.log("[SermonDetail] Found sermon, setting state:", foundSermon.id);
-        setSermon(foundSermon);
-      } catch (e: any) {
-        console.error('[SermonDetail] Failed to fetch sermon detail:', e);
-        setError(e.message || 'Failed to load recording details.');
+        
+        const fetchedSermon = await getSermonById(sermonId);
+        
+        if (!fetchedSermon) {
+          console.error(`[SermonDetailScreen] Sermon with ID ${sermonId} not found`);
+          setError('Sermon not found');
+        } else {
+          console.log(`[SermonDetailScreen] Successfully loaded sermon: ${fetchedSermon.id}`);
+          setSermon(fetchedSermon);
+        }
+      } catch (err: any) {
+        console.error('[SermonDetailScreen] Error loading sermon:', err);
+        setError(err.message || 'Failed to load sermon');
       } finally {
         setIsLoading(false);
       }
-    };
-
-    loadSermonDetail();
-  }, [sermonId]);
-
-  // Set editable title when sermon loads or editing starts
-  useEffect(() => {
-    if (sermon) {
-      setEditableTitle(sermon.title || 'Sermon'); 
-    }
-    if (isEditingTitle && titleInputRef.current) {
-      titleInputRef.current.focus();
-    }
-  }, [sermon, isEditingTitle]);
-
-  // Handle saving the title
-  const handleSaveTitle = async () => {
-    if (!sermon || editableTitle === sermon.title || !editableTitle.trim()) {
-      setIsEditingTitle(false); // Exit editing if no change or empty
-      if (sermon) setEditableTitle(sermon.title || 'Sermon'); // Reset editable title
-      return;
     }
     
-    try {
-      // Call the hook function to update the title
-      const updatedSermon = await updateSermonTitle(sermon.id, editableTitle.trim());
-      if (updatedSermon) {
-        setSermon(updatedSermon); // Update local state
-        console.log("Sermon title updated successfully");
-      } else {
-        Alert.alert("Error", "Could not save the title. Please try again.");
-        setEditableTitle(sermon.title || 'Sermon'); // Revert on error
+    loadSermonData();
+  }, [sermonId]);
+
+  // Load audio when sermon is loaded
+  useEffect(() => {
+    if (!sermon) return;
+    const audioUrl = sermon.audioUrl;
+    if (!audioUrl) return;
+
+    const loadAudio = async () => {
+      try {
+        setIsAudioLoading(true);
+        
+        // Configure audio mode
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+        
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri: audioUrl as string },
+          { shouldPlay: false },
+          onPlaybackStatusUpdate,
+          true
+        );
+        setSound(newSound);
+        setIsAudioLoaded(true);
+      } catch (error) {
+        console.error('Error loading audio:', error);
+        setError('Failed to load audio');
+      } finally {
+        setIsAudioLoading(false);
       }
-    } catch (e) {
-      console.error("Error saving title:", e);
-      Alert.alert("Error", "An unexpected error occurred while saving the title.");
-      setEditableTitle(sermon.title || 'Sermon'); // Revert on error
-    } finally {
-      setIsEditingTitle(false);
+    };
+
+    loadAudio();
+
+    return () => {
+      if (sound) {
+        sound.unloadAsync();
+      }
+    };
+  }, [sermon?.audioUrl]); // Only reload when audio URL changes
+  
+  // Playback status update handler
+  const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
+    if (!status.isLoaded) return;
+    
+    setIsPlaying(status.isPlaying);
+    setPlaybackPosition(status.positionMillis);
+    setPlaybackDuration(status.durationMillis || 0);
+    
+    if (status.didJustFinish) {
+      // Reset position when finished
+      sound?.setPositionAsync(0);
+    }
+  };
+
+  // Handle tab change
+  const handleTabChange = (tab: TabType) => {
+    // If leaving transcript tab, pause audio
+    if (activeTab === 'transcript' && tab !== 'transcript') {
+      pausePlayback();
+    }
+    
+    setActiveTab(tab);
+  };
+  
+  // Audio control functions
+  const togglePlayback = async () => {
+    if (!sound || !isAudioLoaded) return;
+    
+    if (isPlaying) {
+      await sound.pauseAsync();
+    } else {
+      await sound.playAsync();
     }
   };
   
-  const handleCancelEditTitle = () => {
-    setIsEditingTitle(false);
-    if (sermon) setEditableTitle(sermon.title || 'Sermon');
+  const pausePlayback = async () => {
+    if (!sound || !isAudioLoaded || !isPlaying) return;
+    await sound.pauseAsync();
+  };
+  
+  const seekTo = async (position: number) => {
+    if (!sound || !isAudioLoaded) return;
+    await sound.setPositionAsync(position);
+  };
+  
+  const skipForward = async (milliseconds = 15000) => {
+    if (!sound || !isAudioLoaded) return;
+    const newPosition = Math.min(playbackDuration, playbackPosition + milliseconds);
+    await sound.setPositionAsync(newPosition);
+  };
+  
+  const skipBackward = async (milliseconds = 15000) => {
+    if (!sound || !isAudioLoaded) return;
+    const newPosition = Math.max(0, playbackPosition - milliseconds);
+    await sound.setPositionAsync(newPosition);
   };
 
-  // Use the correct prop name for NotesTab
-  const handleNotesSaved = (updatedSermon: SavedSermon) => {
-    console.log("Sermon notes updated in parent:", updatedSermon);
-    setSermon(updatedSermon);
+  const handleUpdateSermon = async (updatedSermon: SavedSermon) => {
+    try {
+      const result = await updateSermon(updatedSermon.id, { notes: updatedSermon.notes });
+      setSermon(result);
+    } catch (err) {
+      console.error('[SermonDetailScreen] Error updating sermon:', err);
+      setError('Failed to update sermon');
+    }
   };
 
-  // Render sermon metadata (date, time, duration)
-  const renderSermonMetadata = () => {
-    if (!sermon) return null;
-    
-    console.log(`[SermonDetail] Rendering metadata, sermon.durationMillis: ${sermon.durationMillis}`);
-
-    // Format date: Mon, 4/7
-    const sermonDate = new Date(sermon.date);
-    const day = sermonDate.toLocaleDateString('en-US', { weekday: 'short' });
-    const month = sermonDate.getMonth() + 1;
-    const date = sermonDate.getDate();
-    const formattedDate = `${day}, ${month}/${date}`;
-    
-    // Format time: 5:04PM
-    const formattedTime = sermonDate.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
-      minute: '2-digit', 
-      hour12: true 
-    });
-    
-    // Calculate duration: Use stored durationMillis directly.
-    const formattedDuration = formatMillisToMMSS(sermon.durationMillis);
-    
-    const styles = StyleSheet.create({
-      metadataContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: theme.spacing.md,
-        paddingBottom: theme.spacing.sm,
-        flexWrap: 'wrap',
-        backgroundColor: colors.background.primary,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: colors.ui.border,
-      },
-      metadataItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginRight: theme.spacing.md,
-        marginBottom: theme.spacing.xs,
-      },
-      metadataText: {
-        fontSize: theme.fontSizes.button,
-        color: colors.text.secondary,
-        marginLeft: theme.spacing.xs,
-      },
-    });
-    
-    // *** Log the final formatted duration string ***
-    console.log(`[SermonDetail] Final formattedDuration: ${formattedDuration}`);
-
-    return (
-      <View style={styles.metadataContainer}>
-        <View style={styles.metadataItem}>
-          <Ionicons name="calendar-outline" size={16} color={colors.text.tertiary} />
-          <Text style={styles.metadataText}>{formattedDate}</Text>
-        </View>
-        <View style={styles.metadataItem}>
-          <Text style={[styles.metadataText, { marginLeft: 0 }]}>{formattedTime}</Text>
-        </View>
-        <View style={styles.metadataItem}>
-          <Ionicons name="timer-outline" size={16} color={colors.text.tertiary} />
-          <Text style={styles.metadataText}>{formattedDuration}</Text>
-        </View>
-        <View style={styles.metadataItem}>
-          <Ionicons name="person-outline" size={16} color={colors.text.tertiary} />
-          <Text style={styles.metadataText}>You</Text>
-        </View>
-      </View>
-    );
+  // Add title update handler
+  const handleTitleUpdate = async (newTitle: string) => {
+    try {
+      if (!sermon) return;
+      const result = await updateSermon(sermon.id, { title: newTitle.trim() });
+      setSermon(result);
+      setIsEditingTitle(false);
+    } catch (err) {
+      console.error('[SermonDetailScreen] Error updating sermon title:', err);
+      setError('Failed to update sermon title');
+    }
   };
 
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background.primary,
-    },
-    loadingContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: colors.background.primary,
-    },
-    errorContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: theme.spacing.lg,
-      backgroundColor: colors.background.primary,
-    },
-    errorText: {
-      fontSize: theme.fontSizes.body,
-      textAlign: 'center',
-      color: colors.ui.error,
-    },
-    titleContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: theme.spacing.md,
-      paddingTop: theme.spacing.sm,
-      backgroundColor: colors.background.primary,
-      minHeight: 50,
-    },
-    titleText: {
-      fontSize: theme.fontSizes.heading,
-      fontWeight: fontWeight('bold'),
-      color: colors.text.primary,
-      flex: 1,
-      marginRight: theme.spacing.sm,
-      lineHeight: theme.fontSizes.heading * 1.2,
-      paddingVertical: theme.spacing.xs,
-    },
-    editIcon: {
-      padding: theme.spacing.xs,
-      alignSelf: 'center',
-    },
-    titleInput: {
-      fontSize: theme.fontSizes.heading,
-      fontWeight: fontWeight('bold'),
-      color: colors.text.primary,
-      flex: 1,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.primary, 
-      marginRight: theme.spacing.sm,
-      paddingVertical: theme.spacing.xs,
-      alignSelf: 'stretch',
-    },
-    tabBar: {
-      backgroundColor: colors.background.primary,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.ui.border,
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0,
-      elevation: 0,
-    },
-    tabIndicator: {
-      backgroundColor: colors.primary,
-    },
-    tabLabel: {
-      fontSize: theme.fontSizes.button,
-      fontWeight: fontWeight('medium'),
-      textTransform: 'none',
-    },
-  });
+  // Start editing handler
+  const startTitleEdit = () => {
+    setEditedTitle(sermon?.title || '');
+    setIsEditingTitle(true);
+    // Focus the input on the next render
+    setTimeout(() => titleInputRef.current?.focus(), 100);
+  };
 
+  // Show loading state
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle={colors.text.primary === '#F5F5F5' ? 'light-content' : 'dark-content'} />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      </SafeAreaView>
+      <View style={[styles.container, { 
+        backgroundColor: colors.background.primary,
+        justifyContent: 'center',
+        alignItems: 'center'
+      }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <ThemedText 
+          variant="secondary" 
+          style={{ marginTop: spacing.md }}
+        >
+          Loading sermon...
+        </ThemedText>
+      </View>
     );
   }
 
+  // Show error state
   if (error || !sermon) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle={colors.text.primary === '#F5F5F5' ? 'light-content' : 'dark-content'} />
+      <View style={[styles.container, { 
+        backgroundColor: colors.background.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.lg
+      }]}>
         <ErrorDisplay 
-          message={error || 'Sermon data could not be loaded.'} 
+          message={error || 'Sermon not found'} 
+          onRetry={() => setIsLoading(true)} 
         />
-      </SafeAreaView>
+      </View>
     );
   }
 
+  const renderTab = () => {
+    switch (activeTab) {
+      case 'summary':
+        return <SummaryTab sermon={sermon} />;
+      case 'transcript':
+        return (
+          <TranscriptTab 
+            sermon={sermon}
+            isPlaying={isPlaying}
+            isLoading={isAudioLoading}
+            isLoaded={isAudioLoaded}
+            position={playbackPosition}
+            duration={playbackDuration}
+            onTogglePlayback={togglePlayback}
+            onSeek={seekTo}
+            onSkipForward={skipForward}
+            onSkipBackward={skipBackward}
+          />
+        );
+      case 'notes':
+        return <NotesTab sermon={sermon} onUpdate={handleUpdateSermon} />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle={colors.text.primary === '#F5F5F5' ? 'light-content' : 'dark-content'} />
-      
-      {/* Title Section - Conditional Rendering */}
-      <View style={styles.titleContainer}>
+    <View style={[styles.container, { backgroundColor: colors.background.primary }]}>
+      <TouchableOpacity 
+        style={[styles.titleContainer, { 
+          backgroundColor: colors.background.primary,
+          padding: spacing.md,
+          paddingBottom: spacing.sm,
+        }]}
+        onPress={startTitleEdit}
+      >
         {isEditingTitle ? (
-          <>
-            <TextInput
-              ref={titleInputRef}
-              style={styles.titleInput}
-              value={editableTitle}
-              onChangeText={setEditableTitle}
-              onBlur={handleSaveTitle}
-              onSubmitEditing={handleSaveTitle}
-              returnKeyType="done"
-              selectTextOnFocus
-            />
-            <TouchableOpacity onPress={handleCancelEditTitle} style={styles.editIcon}>
-              <Ionicons name="close-circle-outline" size={24} color={colors.text.secondary} />
-            </TouchableOpacity>
-          </>
+          <TextInput
+            ref={titleInputRef}
+            value={editedTitle}
+            onChangeText={setEditedTitle}
+            style={[styles.titleInput, { 
+              color: colors.text.primary,
+              fontSize: 24,
+              fontWeight: 'bold',
+            }]}
+            placeholder="Enter title"
+            placeholderTextColor={colors.text.secondary}
+            onBlur={() => {
+              if (editedTitle.trim() !== sermon?.title) {
+                handleTitleUpdate(editedTitle);
+              } else {
+                setIsEditingTitle(false);
+              }
+            }}
+            onSubmitEditing={() => {
+              if (editedTitle.trim() !== sermon?.title) {
+                handleTitleUpdate(editedTitle);
+              } else {
+                setIsEditingTitle(false);
+              }
+            }}
+          />
         ) : (
-          <>
-            <Text style={styles.titleText} numberOfLines={1} ellipsizeMode="tail">
-              {sermon?.title || 'Sermon'}
-            </Text>
-            <TouchableOpacity onPress={() => setIsEditingTitle(true)} style={styles.editIcon}>
-              <Ionicons name="pencil-outline" size={20} color={colors.text.secondary} />
-            </TouchableOpacity>
-          </>
+          <View style={styles.titleRow}>
+            <ThemedText 
+              variant="primary" 
+              weight="bold"
+              style={{ fontSize: 24 }}
+            >
+              {sermon.title || 'Untitled Note'}
+            </ThemedText>
+            <Ionicons 
+              name="pencil" 
+              size={16} 
+              color={colors.text.secondary}
+              style={{ marginLeft: spacing.sm }}
+            />
+          </View>
         )}
+      </TouchableOpacity>
+
+      <View style={[styles.metadataContainer, { 
+        borderBottomColor: colors.border || colors.text.secondary,
+        backgroundColor: colors.background.primary,
+        padding: spacing.md,
+      }]}>
+        <View style={[styles.metadataRow, { gap: spacing.md }]}>
+          <View style={[styles.metadataItem, { gap: spacing.xs }]}>
+            <Ionicons name="calendar-outline" size={16} color={colors.text.secondary} />
+            <ThemedText 
+              variant="secondary" 
+              style={{ ...styles.metadataText, color: colors.text.secondary }}
+            >
+              {new Date(sermon.date).toLocaleDateString('en-US', { 
+                weekday: 'short',
+                month: 'numeric',
+                day: 'numeric',
+              })} · {new Date(sermon.date).toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              })}
+            </ThemedText>
+          </View>
+          <View style={[styles.metadataItem, { gap: spacing.xs }]}>
+            <Ionicons name="time-outline" size={16} color={colors.text.secondary} />
+            <ThemedText 
+              variant="secondary" 
+              style={{ ...styles.metadataText, color: colors.text.secondary }}
+            >
+              {formatMillisToMMSS(sermon.durationMillis || 0)}
+            </ThemedText>
+          </View>
+        </View>
       </View>
 
-      {renderSermonMetadata()}
-      
-      {/* Tab Navigation - Pass initialRouteName */}
-      <Tab.Navigator
-        initialRouteName={initialTab || 'Summary'} // Set initial tab based on param, default to Summary
-        screenOptions={{
-          tabBarActiveTintColor: colors.primary,
-          tabBarInactiveTintColor: colors.text.tertiary,
-          tabBarIndicatorStyle: styles.tabIndicator,
-          tabBarStyle: styles.tabBar,
-          tabBarLabelStyle: styles.tabLabel,
-          swipeEnabled: true,
-          lazy: true,
-        }}
-      >
-        <Tab.Screen name="Summary">
-          {(props: SermonDetailTabScreenProps<'Summary'>) => 
-            <SummaryTab {...props} sermon={sermon} />
-          } 
-        </Tab.Screen>
-        <Tab.Screen name="Transcript">
-          {(props: SermonDetailTabScreenProps<'Transcript'>) => 
-            <TranscriptTab {...props} sermon={sermon} />
-          } 
-        </Tab.Screen>
-        <Tab.Screen name="Notes">
-          {(props: SermonDetailTabScreenProps<'Notes'>) => (
-            <NotesTab 
-              {...props} 
-              sermon={sermon} 
-              onNotesSaved={handleNotesSaved}
-            />
-          )}
-        </Tab.Screen>
-        {/* REMOVED: Keywords Tab Screen */}
-        {/* <Tab.Screen name="Keywords">
-          {(props: SermonDetailTabScreenProps<'Keywords'>) => 
-            <KeywordsTab {...props} sermon={sermon!} />
-          } 
-        </Tab.Screen> */}
-      </Tab.Navigator>
-    </SafeAreaView>
+      <View style={styles.tabBar}>
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => handleTabChange('summary')}
+          >
+            <ThemedText
+              variant={activeTab === 'summary' ? 'primary' : 'secondary'}
+              weight={activeTab === 'summary' ? 'bold' : 'regular'}
+              style={styles.tabText}
+            >
+              Summary
+            </ThemedText>
+            {activeTab === 'summary' && <View style={[styles.indicator, { backgroundColor: colors.primary }]} />}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => handleTabChange('transcript')}
+          >
+            <ThemedText
+              variant={activeTab === 'transcript' ? 'primary' : 'secondary'}
+              weight={activeTab === 'transcript' ? 'bold' : 'regular'}
+              style={styles.tabText}
+            >
+              Transcript
+            </ThemedText>
+            {activeTab === 'transcript' && <View style={[styles.indicator, { backgroundColor: colors.primary }]} />}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => handleTabChange('notes')}
+          >
+            <ThemedText
+              variant={activeTab === 'notes' ? 'primary' : 'secondary'}
+              weight={activeTab === 'notes' ? 'bold' : 'regular'}
+              style={styles.tabText}
+            >
+              Notes
+            </ThemedText>
+            {activeTab === 'notes' && <View style={[styles.indicator, { backgroundColor: colors.primary }]} />}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.content}>
+        {renderTab()}
+      </View>
+    </View>
   );
-} 
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  tabBar: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  tab: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    flex: 1,
+    position: 'relative',
+  },
+  tabText: {
+    fontSize: 16,
+    letterSpacing: 0.3,
+  },
+  indicator: {
+    position: 'absolute',
+    bottom: -1,
+    height: 3,
+    width: '60%',
+    alignSelf: 'center',
+  },
+  content: {
+    flex: 1,
+  },
+  metadataContainer: {
+    borderBottomWidth: 1,
+  },
+  metadataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  metadataItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  metadataText: {
+    fontSize: 14,
+  },
+  titleContainer: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  titleInput: {
+    padding: 0,
+    margin: 0,
+  },
+}); 

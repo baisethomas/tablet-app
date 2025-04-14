@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import Constants from 'expo-constants';
+import { parseScriptureReferences } from './scriptureParser';
 
 // Define the expected structure of the summary
 export interface StructuredSummary {
@@ -25,6 +26,26 @@ if (typeof apiKey === 'string' && apiKey) {
 }
 
 /**
+ * Extract scripture references from text
+ */
+function extractScriptureReferences(text: string): string[] {
+  // Improved regex to better match common scripture reference formats
+  const scriptureRegex = /\b(?:(?:[1-3]\s*)?[A-Za-z]+\.?\s*\d+:\d+(?:-\d+)?(?:,\s*\d+(?:-\d+)?)*)\b/g;
+  
+  const matches = text.match(scriptureRegex) || [];
+  const validReferences: string[] = [];
+  
+  // Validate each reference
+  for (const reference of matches) {
+    if (parseScriptureReferences(reference).length > 0) {
+      validReferences.push(reference);
+    }
+  }
+  
+  return [...new Set(validReferences)]; // Remove duplicates
+}
+
+/**
  * Generates a structured summary of a sermon transcript using OpenAI.
  * @param transcript The full sermon transcript text.
  * @returns A promise resolving to the StructuredSummary object, or throwing an error if unsuccessful.
@@ -39,6 +60,10 @@ export async function generateSermonSummary(
   if (!transcript || transcript.trim().length === 0) {
     throw new Error('Cannot summarize an empty transcript.');
   }
+
+  // Extract scripture references from the transcript
+  const extractedReferences = extractScriptureReferences(transcript);
+  console.log('[openai.ts] Extracted scripture references:', extractedReferences);
 
   const systemPrompt = `You are a discerning and spiritually sensitive assistant summarizing a live sermon. First, determine the type of sermon based on tone, structure, and delivery cues. Then provide a warm, theologically grounded summary of the message. Focus on what was actually said—do not infer or fabricate meaning.
 
@@ -57,6 +82,7 @@ STEP 2: Summary Content
 IMPORTANT:
 - DO NOT fabricate scripture or ideas that weren't said.
 - Keep tone spiritually grounded, insightful, and reflective of the speaker's delivery.
+- Pay special attention to scripture references. Be sure to include references like "John 3:16" in the scriptures array.
 
 Return a single JSON object in the following format. DO NOT include markdown or commentary.
 
@@ -101,8 +127,23 @@ Return a single JSON object in the following format. DO NOT include markdown or 
         Array.isArray(parsedSummary.keyPoints) &&
         parsedSummary.keyPoints.every(p => typeof p === 'string') 
       ) {
+        // Combine AI-identified scriptures with our extracted references
+        const scriptures = [
+          ...parsedSummary.scriptures,
+          ...extractedReferences.filter(ref => !parsedSummary.scriptures?.includes(ref))
+        ];
+
+        // Create the final summary with the enhanced scriptures list
+        const enhancedSummary: StructuredSummary = {
+          sermonType: parsedSummary.sermonType as StructuredSummary['sermonType'],
+          overview: parsedSummary.overview!,
+          scriptures: scriptures,
+          keyPoints: parsedSummary.keyPoints!
+        };
+        
+        console.log('[openai.ts] Enhanced scriptures list:', enhancedSummary.scriptures);
         console.log('[openai.ts] Successfully parsed summary.');
-        return parsedSummary as StructuredSummary;
+        return enhancedSummary;
       } else {
         console.error('[openai.ts] OpenAI response JSON did not match expected structure or had invalid sermonType:', parsedSummary);
         throw new Error('Invalid summary format received from AI.');

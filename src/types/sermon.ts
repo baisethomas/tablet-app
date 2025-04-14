@@ -7,10 +7,11 @@ export interface SavedSermon {
   title?: string; 
   transcript: string; 
   transcriptData?: TranscriptionResponse;
+  processingStatus?: string;
+  processingError?: string;
+  durationMillis?: number;
+  type: 'recording' | 'note';
   notes?: string;
   audioUrl?: string;
   summary?: StructuredSummary;
-  durationMillis?: number;
-  processingStatus?: 'processing' | 'completed' | 'error';
-  processingError?: string;
 } 

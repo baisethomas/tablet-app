@@ -1,635 +1,401 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  SafeAreaView, 
-  SectionList,
-  TouchableOpacity, 
-  ActivityIndicator,
-  RefreshControl,
-  StatusBar,
-  Alert,
-  Platform,
-  Animated,
-  I18nManager
-} from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Image, Alert } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RouteProp } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../contexts/theme-context';
-import type { RootStackParamList } from '../navigation/app-navigator';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { createSampleSermonData, clearSermonData } from '../utils/dev-helpers';
+import { Swipeable } from 'react-native-gesture-handler';
+import { ThemedText } from '../components/ThemedText';
+import { ThemedButton } from '../components/ThemedButton';
 import { ErrorDisplay } from '../components/ui/ErrorDisplay';
-import { getAllSermons } from '../services/sermon-storage';
-import * as Notifications from 'expo-notifications';
-import { formatMillisToMMSS } from '../utils/formatters';
+import { NoteModal } from '../components/NoteModal';
+import { useTheme } from '../hooks/useTheme';
 import { useSermons } from '../hooks/useSermons';
-import { Swipeable, RectButton } from 'react-native-gesture-handler';
+import { createNote } from '../services/sermon-storage';
+import { SavedSermon } from '../types/sermon';
+import { RootStackParamList } from '../types/navigation';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Define the structure for saved data
-interface SavedSermon {
-  id: string; 
-  date: string; 
-  title?: string; 
-  transcript: string; 
-  processingStatus?: string;
-  processingError?: string;
-  durationMillis?: number; // Make optional to match global type
-}
-
-// Rename interface for SectionList structure
-interface SectionData {
-  title: string; // Renamed from 'date' to 'title' for clarity
-  data: SavedSermon[];
-}
-
-// Define navigation prop type for this screen
-type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
-
-// Helper function to group sermons by date for SectionList
-function groupSermonsByDate(sermons: SavedSermon[]): SectionData[] {
-  const groups: Record<string, SavedSermon[]> = {};
-  
-  // Sort sermons newest first before grouping
-  const sortedSermons = [...sermons].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-  sortedSermons.forEach(sermon => {
-    const date = new Date(sermon.date);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    let groupKey;
-    
-    if (date.toDateString() === today.toDateString()) {
-      groupKey = 'Today';
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      groupKey = 'Yesterday';
-    } else {
-      groupKey = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-    }
-    
-    if (!groups[groupKey]) {
-      groups[groupKey] = [];
-    }
-    
-    groups[groupKey].push(sermon);
-  });
-  
-  // Convert to SectionList array format
-  // Define desired order of sections
-  const sectionOrder = ['Today', 'Yesterday']; 
-  const sections: SectionData[] = [];
-
-  // Add Today and Yesterday first if they exist
-  sectionOrder.forEach(key => {
-    if (groups[key]) {
-      sections.push({ title: key, data: groups[key] });
-      delete groups[key]; // Remove from groups to avoid duplication
-    }
-  });
-
-  // Add remaining date groups (sorted chronologically implicitly by how they were added)
-  Object.entries(groups)
-    .sort(([dateA], [dateB]) => new Date(sermons.find(s => s.date === dateB)?.date || 0).getTime() - new Date(sermons.find(s => s.date === dateA)?.date || 0).getTime()) // Attempt to sort remaining dates
-    .forEach(([title, data]) => {
-       sections.push({ title, data });
-    });
-
-  return sections;
-}
+type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
 
 export function HomeScreen() {
-  const { colors, theme } = useTheme();
-  const { fontWeight } = useThemeStyles();
-  const navigation = useNavigation<HomeScreenNavigationProp>();
-  const { deleteSermon, isLoading: isDeleting } = useSermons();
+  const navigation = useNavigation();
+  const { colors, typography, getFontWeight } = useTheme();
+  const { isLoading, error, getSermons, deleteSermon } = useSermons();
   const [sermons, setSermons] = useState<SavedSermon[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const openSwipeableRef = useRef<Swipeable | null>(null);
+  const [isNoteModalVisible, setIsNoteModalVisible] = useState(false);
+  const insets = useSafeAreaInsets();
 
-  // Request notification permissions on component mount
+  // Load sermons on component mount and when screen comes into focus
   useEffect(() => {
-    async function registerForPushNotificationsAsync() {
-      let token;
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'default',
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FF231F7C',
-        });
-      }
-
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      if (existingStatus !== 'granted') {
-        console.log('[HomeScreen] Requesting notification permissions...');
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-      if (finalStatus !== 'granted') {
-        console.log('[HomeScreen] Failed to get push token for push notification!');
-        // Optionally inform the user that notifications won't work
-        // Alert.alert('Notification Permission Denied', 'You will not receive updates on sermon processing.');
-        return;
-      }
-      console.log('[HomeScreen] Notification permissions granted.');
-      // You could get the ExpoPushToken here if needed for sending pushes later
-      // token = (await Notifications.getExpoPushTokenAsync()).data;
-      // console.log(token);
-    }
-
-    registerForPushNotificationsAsync();
-  }, []); // Empty dependency array ensures this runs once on mount
-
-  // Define styles inside the component to access theme hooks
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background.primary,
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.ui.border,
-      backgroundColor: colors.background.primary,
-    },
-    logoContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    logoText: {
-      fontSize: 24,
-      fontWeight: fontWeight('bold'),
-      color: colors.primary,
-    },
-    headerActions: {
-      flexDirection: 'row',
-      gap: 12,
-    },
-    headerButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.background.secondary,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    tabContainer: {
-      flexDirection: 'row',
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.ui.border,
-      backgroundColor: colors.background.primary,
-    },
-    tab: {
-      flex: 1,
-      paddingVertical: 12,
-      alignItems: 'center',
-    },
-    activeTab: {
-      borderBottomWidth: 2,
-      borderBottomColor: colors.primary,
-    },
-    tabText: {
-      fontSize: 16,
-      color: colors.text.secondary,
-    },
-    activeTabText: {
-      color: colors.primary,
-      fontWeight: fontWeight('medium'),
-    },
-    section: {
-    },
-    sectionHeader: {
-      fontSize: 16,
-      fontWeight: fontWeight('semiBold'),
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-      color: colors.text.secondary,
-      backgroundColor: colors.background.primary,
-    },
-    sermonCard: {
-      backgroundColor: colors.background.secondary, 
-      borderRadius: 8,
-      marginHorizontal: theme.spacing.md, 
-      marginVertical: theme.spacing.sm, 
-      padding: theme.spacing.md,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.ui.border, 
-    },
-    processingCard: {
-      opacity: 0.6,
-    },
-    errorCard: {
-      borderColor: colors.ui.error,
-      borderWidth: 1,
-    },
-    cardHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center', // Align time better vertically
-      marginBottom: theme.spacing.xs, // Slightly reduce bottom margin
-    },
-    cardTitle: {
-      fontSize: theme.fontSizes.body, 
-      fontWeight: fontWeight('semiBold'),
-      color: colors.text.primary,
-      flexShrink: 1, 
-      marginRight: theme.spacing.sm, 
-      // Remove marginBottom as header handles spacing
-    },
-    cardTime: {
-      fontSize: theme.fontSizes.caption, 
-      color: colors.text.secondary,
-      flexShrink: 0, 
-    },
-    cardPreview: {
-      fontSize: theme.fontSizes.button, 
-      color: colors.text.secondary, 
-      lineHeight: theme.lineHeights.button, 
-      marginTop: theme.spacing.xs, 
-      marginLeft: theme.spacing.sm, // Add left margin for indent
-    },
-    cardStatusContainer: {
-        marginTop: theme.spacing.sm,
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    cardStatusText: {
-        marginLeft: theme.spacing.xs,
-        fontSize: theme.fontSizes.caption,
-        color: colors.text.secondary,
-        fontStyle: 'italic',
-    },
-    cardErrorText: {
-        color: colors.ui.error,
-    },
-    centeredInfo: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
-      backgroundColor: colors.background.primary,
-    },
-    emptyText: {
-      fontSize: 18,
-      color: colors.text.secondary,
-      marginBottom: 20,
-    },
-    errorText: {
-      fontSize: 16,
-      color: colors.ui.error,
-      textAlign: 'center',
-      marginBottom: 20,
-    },
-    retryButton: {
-      paddingVertical: 10,
-      paddingHorizontal: 20,
-      backgroundColor: colors.background.secondary,
-      borderRadius: 8,
-    },
-    newRecordingButton: {
-      backgroundColor: colors.primary,
-      paddingVertical: 12,
-      paddingHorizontal: 24,
-      borderRadius: 8,
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    newRecordingText: {
-      color: '#FFFFFF',
-      fontSize: theme.fontSizes.body,
-      fontWeight: fontWeight('medium'),
-      marginLeft: theme.spacing.sm,
-    },
-    listContentContainer: {
-      paddingBottom: theme.spacing.md, // Add padding at the bottom of the list
-    },
-    rightActionContainer: {
-      width: 80,
-      flexDirection: I18nManager.isRTL ? 'row-reverse' : 'row',
-    },
-    deleteButton: {
-      flex: 1,
-      backgroundColor: colors.ui.error,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginVertical: theme.spacing.sm,
-      borderTopRightRadius: 8, 
-      borderBottomRightRadius: 8,
-    },
-    deleteButtonText: {
-      color: '#FFFFFF',
-      fontSize: theme.fontSizes.button,
-      fontWeight: fontWeight('medium'),
-      paddingHorizontal: 10,
-    },
-  });
-
-  const loadSermonsFromStorage = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const sermonsArray = await getAllSermons();
-      setSermons(sermonsArray);
-    } catch (e: any) {
-      console.error('[HomeScreen] Failed to fetch sermons:', e);
-      setError('Failed to load saved recordings. Please try again.');
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
-
-  // Load sermons when the screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      loadSermonsFromStorage();
-    }, [loadSermonsFromStorage])
-  );
-
-  const handleRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    loadSermonsFromStorage();
-  }, [loadSermonsFromStorage]);
-
-  const handlePressItem = (item: SavedSermon) => {
-    closeOpenSwipeable();
-    if (item.processingStatus === 'error') {
-        Alert.alert(
-          'Processing Error',
-          item.processingError || 'An unknown error occurred during processing.',
-          [{ text: 'OK' }]
-        );
-      } else if (item.processingStatus !== 'processing') {
-        navigation.navigate('SermonDetail', { sermonId: item.id });
-      }
-  };
-
-  const handleNewTranscription = () => {
-    closeOpenSwipeable();
-    navigation.navigate('Transcription');
-  };
-
-  const handleGenerateDemoData = async () => {
-    if (__DEV__) {
-      try {
-        await createSampleSermonData();
-        // Reload sermons after creating sample data
-        handleRefresh();
-      } catch (error) {
-        console.error("Error generating demo data:", error);
-      }
-    }
-  };
-
-  const closeOpenSwipeable = () => {
-      openSwipeableRef.current?.close();
-  };
-
-  const handleDelete = (sermonToDelete: SavedSermon) => {
-    closeOpenSwipeable();
-    Alert.alert(
-      'Delete Recording?',
-      `Are you sure you want to permanently delete "${sermonToDelete.title || 'this recording'}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const success = await deleteSermon(sermonToDelete.id);
-              if (success) {
-                // Remove from local state immediately for UI update
-                setSermons(prevSermons => prevSermons.filter(s => s.id !== sermonToDelete.id));
-              } else {
-                Alert.alert('Error', 'Could not delete the recording. Please try again.');
-              }
-            } catch (e) {
-              console.error("Deletion error:", e);
-              Alert.alert('Error', 'An unexpected error occurred while deleting.');
-            }
-          },
-        },
-      ],
-      { cancelable: true }
-    );
-  };
-
-  const renderRightActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, item: SavedSermon) => {
-    const trans = dragX.interpolate({
-        inputRange: [-80, 0],
-        outputRange: [0, 80],
-        extrapolate: 'clamp',
+    loadSermons();
+    
+    // Also reload data when the screen comes into focus (returning from recording/other screens)
+    const unsubscribe = navigation.addListener('focus', () => {
+      console.log('[HomeScreen] Screen focused, refreshing sermons');
+      loadSermons();
     });
-    return (
-      <View style={styles.rightActionContainer}>
-        <Animated.View style={{ flex: 1, transform: [{ translateX: trans }] }}>
-            <RectButton style={styles.deleteButton} onPress={() => handleDelete(item)}>
-                <Ionicons name="trash-outline" size={24} color="#FFFFFF" />
-            </RectButton>
-        </Animated.View>
-      </View>
-    );
+    
+    return unsubscribe;
+  }, [navigation]);
+  
+  // Function to load sermons
+  const loadSermons = async () => {
+    console.log('[HomeScreen] Loading sermons...');
+    const fetchedSermons = await getSermons();
+    console.log(`[HomeScreen] Loaded ${fetchedSermons.length} sermons`);
+    setSermons(fetchedSermons);
   };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await loadSermons();
+    setIsRefreshing(false);
+  };
+
+  const handleCreateNote = async (title: string, content: string) => {
+    try {
+      await createNote(title, content);
+      const updatedSermons = await getSermons();
+      setSermons(updatedSermons);
+      setIsNoteModalVisible(false);
+    } catch (error) {
+      console.error('Error creating note:', error);
+    }
+  };
+
+  // Handle sermon deletion
+  const handleDeleteSermon = useCallback(async (id: string) => {
+    try {
+      const success = await deleteSermon(id);
+      if (success) {
+        // Refresh sermon list after deletion
+        await loadSermons();
+      }
+    } catch (error) {
+      console.error('Failed to delete sermon:', error);
+    }
+  }, [deleteSermon]);
 
   const renderSermonItem = ({ item }: { item: SavedSermon }) => {
-    // Format time
-    const time = new Date(item.date).toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
+    const isNote = item.type === 'note';
+    const handlePress = () => {
+      if (isNote) {
+        navigation.navigate('SermonDetail', { sermonId: item.id });
+      } else {
+        navigation.navigate('SermonDetail', { sermonId: item.id });
+      }
+    };
+
+    const renderRightActions = () => (
+      <View style={[styles.deleteButton, { backgroundColor: colors.error }]}>
+        <Ionicons name="trash-outline" size={24} color={colors.text.inverse} />
+      </View>
+    );
+
+    // Format time to show like "12:20 AM · 1 min"
+    const formattedTime = new Date(item.date).toLocaleTimeString([], { 
+      hour: '2-digit', 
       minute: '2-digit', 
       hour12: true 
     });
     
-    // Format duration using the new helper and stored durationMillis
-    const duration = formatMillisToMMSS(item.durationMillis);
-    
-    // Get preview text (first line, no bullet)
-    const previewText = item.transcript?.split('\n')[0] || (item.processingStatus === 'completed' ? 'No transcript available' : ' ');
-
-    // Ref for the individual swipeable row
-    const swipeableRowRef = useRef<Swipeable>(null);
-
-    // Function to handle opening, ensuring only one is open
-    const handleSwipeableOpen = () => {
-        if (openSwipeableRef.current && openSwipeableRef.current !== swipeableRowRef.current) {
-            openSwipeableRef.current.close();
-        }
-        openSwipeableRef.current = swipeableRowRef.current;
-    };
-
-    const cardStyle = [
-      styles.sermonCard,
-      item.processingStatus === 'processing' && styles.processingCard,
-      item.processingStatus === 'error' && styles.errorCard
-    ];
+    // For demo purposes, showing 2 as count for each item
+    const commentCount = 2;
 
     return (
       <Swipeable
-        ref={swipeableRowRef}
         friction={2}
         rightThreshold={40}
-        renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item)}
-        onSwipeableOpen={handleSwipeableOpen}
+        renderRightActions={renderRightActions}
+        onSwipeableOpen={() => {
+          Alert.alert(
+            "Delete Sermon",
+            "Are you sure you want to delete this sermon?",
+            [
+              { 
+                text: "Cancel", 
+                style: "cancel" 
+              },
+              { 
+                text: "Delete", 
+                style: "destructive",
+                onPress: () => handleDeleteSermon(item.id)
+              }
+            ]
+          );
+        }}
       >
-        <TouchableOpacity 
-          style={cardStyle} 
-          onPress={() => handlePressItem(item)}
-          activeOpacity={item.processingStatus === 'processing' ? 1 : 0.7}
+        <TouchableOpacity
+          style={[
+            styles.sermonItem,
+            { 
+              backgroundColor: colors.background.primary,
+              borderRadius: 12,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+            }
+          ]}
+          onPress={handlePress}
         >
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle} numberOfLines={1}>{item.title || 'Note'}</Text>
-            {/* Combine time and duration */}
-            <Text style={styles.cardTime}>
-              {time} · {duration}
-            </Text>
-          </View>
-          {/* Render preview text directly */}
-          <Text style={styles.cardPreview} numberOfLines={2}>{previewText}</Text>
-
-          {/* Add Status Indicator */}
-          {(item.processingStatus === 'processing' || item.processingStatus === 'error') && (
-            <View style={styles.cardStatusContainer}>
-              {item.processingStatus === 'processing' && (
-                <ActivityIndicator size="small" color={colors.text.secondary} />
-              )}
-              {item.processingStatus === 'error' && (
-                <Ionicons name="alert-circle-outline" size={16} color={colors.ui.error} />
-              )}
-              <Text 
-                style={[styles.cardStatusText, item.processingStatus === 'error' && styles.cardErrorText]}
+          <View style={styles.sermonContent}>
+            <View style={styles.sermonHeader}>
+              <ThemedText
+                variant="primary"
+                weight="bold"
+                style={[
+                  styles.sermonTitle, 
+                  { 
+                    fontWeight: getFontWeight('bold')
+                  }
+                ]}
+                numberOfLines={2}
               >
-                {item.processingStatus === 'processing' ? 'Processing...' : 'Error'}
-              </Text>
+                {isNote ? `Sermon - ${new Date(item.date).toLocaleDateString('en-US', { 
+                  month: 'numeric', 
+                  day: 'numeric', 
+                  year: 'numeric'
+                }).replace(/\//g, '/')}` : item.title}
+              </ThemedText>
+              <View style={styles.timeContainer}>
+                <ThemedText
+                  variant="secondary"
+                  style={styles.timeText}
+                >
+                  {formattedTime} · 1 min
+                </ThemedText>
+              </View>
             </View>
-          )}
+            <View style={styles.sermonBody}>
+              <ThemedText
+                variant="secondary"
+                style={styles.bulletText}
+              >
+                • {item.transcript ? item.transcript.substring(0, 100) + (item.transcript.length > 100 ? '...' : '') : 'No transcript available'}
+              </ThemedText>
+              {commentCount > 0 && (
+                <View style={[styles.countBadge, { backgroundColor: colors.background.secondary }]}>
+                  <ThemedText 
+                    variant="primary"
+                    style={styles.countText}
+                  >
+                    {commentCount}
+                  </ThemedText>
+                </View>
+              )}
+            </View>
+          </View>
         </TouchableOpacity>
       </Swipeable>
     );
   };
 
-  const renderContent = () => {
-    if (isLoading) {
-      return (
-        <View style={styles.centeredInfo}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      );
-    }
-    
-    if (error) {
-      return (
-        <ErrorDisplay 
-          message={error} 
-          onRetry={loadSermonsFromStorage} 
-        />
-      );
-    }
-    
-    const sections = groupSermonsByDate(sermons);
-    
-    if (sections.length === 0 && !isLoading && !error) {
-      return (
-        <View style={styles.centeredInfo}>
-          <Text style={styles.emptyText}>No recordings yet</Text>
-          <TouchableOpacity 
-            style={styles.newRecordingButton}
-            onPress={handleNewTranscription}
-          >
-            <Ionicons name="mic-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.newRecordingText}>Start New Recording</Text>
-          </TouchableOpacity>
-          {__DEV__ && (
-            <TouchableOpacity 
-              style={[styles.newRecordingButton, { backgroundColor: colors.ui.info, marginTop: theme.spacing.md }]}
-              onPress={handleGenerateDemoData}
-            >
-              <Text style={[styles.newRecordingText, { color: '#FFFFFF' }]}>Generate Demo Data</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      );
-    }
-    
+  if (isLoading && !sermons.length) {
     return (
-      <SectionList
-        sections={sections}
-        keyExtractor={(item, index) => item.id + index}
+      <View style={[styles.container, { backgroundColor: colors.background.primary }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background.primary }]}>
+        <ErrorDisplay
+          message={error}
+          onRetry={handleRefresh}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background.primary }]}>
+      <View style={[
+        styles.header, 
+        { 
+          paddingTop: insets.top > 0 ? insets.top + 8 : 16,
+          paddingBottom: 12,
+          paddingHorizontal: 16,
+          backgroundColor: colors.background.primary, // Ensure the background is solid
+        }
+      ]}>
+        <ThemedText 
+          variant="primary" 
+          style={{
+            fontSize: typography.fontSize.xxl,
+            fontWeight: typography.fontWeight.bold,
+            letterSpacing: 0.5,
+            color: colors.primary,
+          }}
+        >
+          Tablet
+        </ThemedText>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity style={[styles.circleButton, { backgroundColor: colors.background.secondary }]}>
+            <Ionicons name="search" size={24} color={colors.text.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.circleButton, { backgroundColor: colors.background.secondary }]}
+            onPress={() => setIsNoteModalVisible(true)}
+          >
+            <Ionicons name="add" size={24} color={colors.text.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.circleButton, { backgroundColor: colors.background.secondary }]}>
+            <Ionicons name="notifications-outline" size={24} color={colors.text.primary} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.tabHeader}>
+        <ThemedText
+          variant="primary"
+          style={{
+            fontSize: typography.fontSize.lg,
+            fontWeight: typography.fontWeight.bold,
+            color: colors.primary,
+            textAlign: 'center',
+          }}
+        >
+          Conversations
+        </ThemedText>
+      </View>
+      
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+      <View style={styles.sectionHeader}>
+        <ThemedText
+          variant="secondary"
+          style={{
+            fontSize: typography.fontSize.md,
+            fontWeight: typography.fontWeight.medium,
+          }}
+        >
+          Today
+        </ThemedText>
+      </View>
+
+      <FlatList
+        data={sermons}
         renderItem={renderSermonItem}
-        renderSectionHeader={({ section: { title } }) => (
-          <Text style={styles.sectionHeader}>{title}</Text>
-        )}
-        stickySectionHeadersEnabled={false}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl 
-            refreshing={isRefreshing} 
-            onRefresh={handleRefresh} 
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
             tintColor={colors.primary}
           />
         }
-        contentContainerStyle={styles.listContentContainer}
       />
-    );
-  };
 
-  // Simplified tab bar with just Conversations
-  const renderTabs = () => (
-    <View style={styles.tabContainer}>
-      <View style={[styles.tab, styles.activeTab]}>
-        <Text style={[styles.tabText, styles.activeTabText]}>
-          Conversations
-        </Text>
-      </View>
+      <NoteModal
+        isVisible={isNoteModalVisible}
+        onClose={() => setIsNoteModalVisible(false)}
+        onSave={handleCreateNote}
+      />
     </View>
   );
+}
 
-  // App header with logo and actions like in the Otter.ai UI
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <View style={styles.logoContainer}>
-        <Text style={styles.logoText}>Tablet</Text>
-      </View>
-      
-      <View style={styles.headerActions}>
-        {/* Search Icon */}
-        <TouchableOpacity style={styles.headerButton}>
-          <Ionicons name="search" size={20} color={colors.text.secondary} />
-        </TouchableOpacity>
-        
-        {/* Add Icon */}
-        <TouchableOpacity 
-          style={styles.headerButton}
-          onPress={handleNewTranscription}
-        >
-          <Ionicons name="add" size={24} color={colors.text.secondary} />
-        </TouchableOpacity>
-        
-        {/* Notifications Icon */}
-        <TouchableOpacity style={styles.headerButton}>
-          <Ionicons name="notifications-outline" size={22} color={colors.text.secondary} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      {renderHeader()}
-      {renderTabs()}
-      {renderContent()}
-    </SafeAreaView>
-  );
-} 
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#CCCCCC', // Light border 
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
+    zIndex: 10,
+  },
+  title: {
+    letterSpacing: 0.5,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  circleButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  tabHeader: {
+    paddingVertical: 12,
+    borderBottomWidth: 3,
+    borderBottomColor: '#007AFF', // Default iOS blue color
+  },
+  divider: {
+    height: 1,
+    width: '100%',
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  listContent: {
+    paddingHorizontal: 16,
+  },
+  sermonItem: {
+    padding: 16,
+    marginBottom: 12,
+    position: 'relative',
+  },
+  sermonContent: {
+    flex: 1,
+  },
+  sermonHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  sermonTitle: {
+    fontSize: 18,
+    flex: 1,
+  },
+  timeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timeText: {
+    fontSize: 14,
+  },
+  sermonBody: {
+    position: 'relative',
+    paddingRight: 40,
+  },
+  bulletText: {
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  countBadge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  countText: {
+    fontSize: 14,
+  },
+  deleteButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+}); 

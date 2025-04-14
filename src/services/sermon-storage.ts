@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SavedSermon } from '../types/sermon'; // Ensure this path is correct
+import { v4 as uuidv4 } from 'uuid';
 
 const STORAGE_KEY = 'savedSermons';
 
@@ -142,5 +143,43 @@ export async function clearAllSermons(): Promise<void> {
   } catch (error) {
     console.error('[SermonStorage] Error clearing all sermons:', error);
     throw error; // Re-throw error
+  }
+}
+
+function generateUniqueId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2);
+  return `note-${timestamp}-${random}`;
+}
+
+export async function createNote(
+  title: string,
+  content: string,
+  date: Date = new Date()
+): Promise<SavedSermon> {
+  try {
+    const id = generateUniqueId();
+    const note: SavedSermon = {
+      id,
+      title,
+      notes: content,
+      date,
+      type: 'note',
+      processingStatus: 'completed',
+      processingError: null,
+      durationMillis: null,
+      audioUri: null,
+      transcription: null,
+      summary: null,
+      keyPoints: null,
+      scriptureReferences: null,
+      tags: [],
+    };
+
+    await saveSermon(note);
+    return note;
+  } catch (error) {
+    console.error('Error creating note:', error);
+    throw new Error('Failed to create note. Please try again.');
   }
 } 
