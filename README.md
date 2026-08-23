@@ -1,91 +1,17 @@
-# Tablet - Sermon Note-Taking App
+# Tablet Legacy Prototype
 
-A minimalist sermon note-taking app that automatically transcribes sermons in real time, generates summaries, and allows users to add personal notes, reflections, and prayer requests.
+This repository contains an early React Native/Expo prototype of Tablet, the project that later became Tablet Notes.
 
-## Project Structure
+## Current project
 
-- `/src/components`: Reusable UI components
-- `/src/screens`: App screens
-- `/src/navigation`: Navigation configuration
-- `/src/hooks`: Custom React hooks
-- `/src/contexts`: React context providers
-- `/src/utils`: Utility functions
-- `/src/types`: TypeScript type definitions
-- `/src/theme`: Theming and styling
+The active Tablet Notes implementation is maintained at:
 
-## Current Implementation
+**https://github.com/baisethomas/tablet-notes-v3**
 
-- Basic app structure with TypeScript setup
-- Theme system with dark mode support
-- Navigation setup with tabs and stacks
-- Basic screens:
-  - Home screen
-  - Transcription screen (placeholder)
-  - Library screen (placeholder)
-  - Settings screen (placeholder)
+The current product is a native iOS application built around sermon recording, timestamped notes, transcription, AI-assisted summaries, and cloud synchronization.
 
-## Next Steps
+## Repository status
 
-- [ ] Implement Firebase authentication
-- [ ] Set up the transcription API integration (Google Cloud Speech-to-Text)
-- [ ] Implement note-taking functionality
-- [ ] Create sermon storage in Firebase
-- [ ] Implement offline mode and data syncing
-- [ ] Add search and filter capabilities
-- [ ] Enhance UI with animation and gestures
-- [ ] Implement accessibility features
+This prototype is retained for development history only. Its architecture, technology choices, and feature list do not represent the current Tablet Notes product.
 
-## Running the App
-
-```bash
-# Install dependencies
-npm install
-
-# Start the development server
-npx expo start
-```
-
-## Technology Stack
-
-- React Native with Expo
-- TypeScript
-- React Navigation
-- Firebase (authentication, Firestore, storage)
-- Google Cloud Speech-to-Text API 
-
-## Styling
-
-This project uses a theme-aware React Native styling approach:
-
-- **Theme Context**: Provides theme data and dark/light mode switching
-- **useTheme Hook**: Access colors and theme state in components
-- **useThemeStyles Hook**: Create theme-aware StyleSheet objects
-
-### Example Usage
-
-```tsx
-import { useThemeStyles } from './src/hooks/useThemeStyles';
-
-function MyComponent() {
-  const { createThemedStyles } = useThemeStyles();
-  
-  const styles = createThemedStyles((colors) => ({
-    container: {
-      backgroundColor: colors.background.primary,
-      padding: 16,
-    },
-    text: {
-      color: colors.text.primary,
-      fontSize: 16,
-    }
-  }));
-  
-  return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Themed text</Text>
-    </View>
-  );
-}
-```
-
-See `src/docs/styling-guide.md` for detailed styling documentation. 
+No further product development is planned in this repository.
